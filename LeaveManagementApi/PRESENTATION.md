@@ -37,12 +37,12 @@ PSE, BJIT Limited
 
 1. Project Overview
 2. Architecture & Design Patterns
-3. Database Design
-4. API Endpoints
-5. Key Features
-6. Code Walkthrough
-7. Demo
-8. Future Enhancements
+3. Authentication & Authorization
+4. Database Design
+5. API Endpoints
+6. Key Features
+7. Code Walkthrough
+8. Demo
 
 ---
 
@@ -52,10 +52,12 @@ PSE, BJIT Limited
 
 A **RESTful Web Service** that enables organizations to:
 
-- ✅ Manage employee information
-- ✅ Configure leave types (Annual, Sick, Casual, etc.)
+- ✅ **JWT Authentication** - Secure login with access & refresh tokens
+- ✅ **Role-based Authorization** - Admin, Manager, Employee roles
+- ✅ **Leave Balance Tracking** - Track used/remaining days per type
+- ✅ **Email Notifications** - Automated alerts on request status
+- ✅ **Audit Logging** - Track all system actions
 - ✅ Submit and track leave requests
-- ✅ Approve or reject leave applications
 
 ---
 
@@ -88,15 +90,17 @@ A **RESTful Web Service** that enables organizations to:
 ```
 LeaveManagementApi/
 ├── Controllers/          # API Endpoints
+│   ├── AuthController.cs        # Login, Register, Refresh
+│   ├── AdminController.cs       # User & Audit management
 │   ├── EmployeesController.cs
-│   ├── LeaveTypesController.cs
-│   └── LeaveRequestsController.cs
-├── Services/             # Business Logic
-├── Repositories/         # Data Access
-├── Models/               # Domain Entities
-├── DTOs/                 # Data Transfer Objects
-├── Data/                 # EF Core DbContext
-└── Program.cs            # Entry Point
+│   ├── LeaveRequestsController.cs
+│   ├── LeaveBalanceController.cs # Balance tracking
+│   └── LeaveTypesController.cs
+├── Services/             # Auth, JWT, Email, Audit, Balance
+├── Configuration/        # JwtSettings, EmailSettings
+├── Models/               # Employee, Role, LeaveBalance, AuditLog
+├── Data/                 # EF Core DbContext + Seeder
+└── Program.cs            # Entry Point + JWT Config
 ```
 
 ---
@@ -109,6 +113,7 @@ LeaveManagementApi/
 | **Service Layer** | Encapsulates business rules & validation |
 | **Dependency Injection** | Loose coupling & testability |
 | **DTO Pattern** | Separates API contracts from domain models |
+| **JWT Bearer Auth** | Stateless authentication with tokens |
 
 ---
 
@@ -117,16 +122,40 @@ LeaveManagementApi/
 ### Registration in Program.cs
 
 ```csharp
-// Repositories (Data Access)
-builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
-builder.Services.AddScoped<ILeaveTypeRepository, LeaveTypeRepository>();
-builder.Services.AddScoped<ILeaveRequestRepository, LeaveRequestRepository>();
+// Authentication & Security Services
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<ILeaveBalanceService, LeaveBalanceService>();
 
-// Services (Business Logic)
+// Business Logic Services
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
-builder.Services.AddScoped<ILeaveTypeService, LeaveTypeService>();
 builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 ```
+
+---
+
+# 🔐 Authentication & Authorization
+
+### JWT Token Flow
+
+```
+┌─────────┐  POST /api/auth/login   ┌─────────────┐
+│ Client  │────────────────────────▶│ AuthService │
+└─────────┘  { email, password }    └──────┬──────┘
+     ▲                                     │
+     │     { accessToken, refreshToken }   │
+     └─────────────────────────────────────┘
+```
+
+### Role-Based Access Control
+
+| Role | Permissions |
+|------|-------------|
+| **Employee** | View own requests, create leave, view balances |
+| **Manager** | + Approve/Reject team requests |
+| **Admin** | Full access: users, audit logs, balance adjust |
 
 ---
 
@@ -135,28 +164,27 @@ builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 ### Entity Relationship Diagram
 
 ```
-┌──────────────┐         ┌──────────────┐
-│   Employee   │         │  LeaveType   │
-├──────────────┤         ├──────────────┤
-│ Id (PK)      │         │ Id (PK)      │
-│ FirstName    │         │ Name         │
-│ LastName     │         │ DefaultDays  │
-│ Email        │         │ IsActive     │
-│ Department   │         └──────┬───────┘
-└──────┬───────┘                │
-       │                        │
-       └────────┬───────────────┘
-                ▼
-       ┌──────────────────┐
-       │  LeaveRequest    │
-       ├──────────────────┤
-       │ EmployeeId (FK)  │
-       │ LeaveTypeId (FK) │
-       │ StartDate        │
-       │ EndDate          │
-       │ Status           │
-       └──────────────────┘
+┌─────────────────┐       ┌──────────────┐
+│    Employee     │       │  LeaveType   │
+├─────────────────┤       ├──────────────┤
+│ Id, Email       │       │ Id, Name     │
+│ PasswordHash    │       │ DefaultDays  │
+│ Role (Enum)     │       └──────┬───────┘
+│ ManagerId (FK)  │──┐           │
+└───────┬─────────┘  │     ┌─────┴─────┐
+        │            │     │           │
+        ▼            │     ▼           ▼
+┌───────────────┐    │  ┌─────────────────┐
+│ LeaveRequest  │    │  │  LeaveBalance   │
+├───────────────┤    │  ├─────────────────┤
+│ EmployeeId    │    │  │ EmployeeId      │
+│ LeaveTypeId   │    │  │ LeaveTypeId     │
+│ Status (Enum) │    │  │ TotalDays       │
+│ ApprovedById  │────┘  │ UsedDays        │
+└───────────────┘       └─────────────────┘
 ```
+
+**+ AuditLog, RefreshToken entities**
 
 ---
 
@@ -181,15 +209,25 @@ builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
 ---
 
-# 🔌 API Endpoints - Employees
+# 🔌 API Endpoints - Authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/employees` | Get all employees |
-| `GET` | `/api/employees/{id}` | Get by ID |
-| `POST` | `/api/employees` | Create employee |
-| `PUT` | `/api/employees/{id}` | Update employee |
-| `DELETE` | `/api/employees/{id}` | Delete employee |
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `POST` | `/api/auth/register` | Register new user | ❌ |
+| `POST` | `/api/auth/login` | Login, get tokens | ❌ |
+| `POST` | `/api/auth/refresh` | Refresh access token | ❌ |
+| `POST` | `/api/auth/logout` | Logout, revoke token | ✅ |
+
+---
+
+# 🔌 API Endpoints - Admin
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `GET` | `/api/admin/users` | Get all users | Admin |
+| `PUT` | `/api/admin/users/{id}/role` | Update role | Admin |
+| `GET` | `/api/admin/audit-logs` | View audit logs | Admin |
+| `POST` | `/api/admin/leave-balance/adjust` | Adjust balance | Admin |
 
 ---
 
@@ -197,24 +235,34 @@ builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/leaverequests` | Get all requests |
-| `GET` | `/api/leaverequests/pending` | Get pending only |
-| `POST` | `/api/leaverequests` | Create request |
-| `POST` | `/api/leaverequests/{id}/approve` | Approve |
-| `POST` | `/api/leaverequests/{id}/reject` | Reject |
-| `POST` | `/api/leaverequests/{id}/cancel` | Cancel |
+| `GET` | `/api/leaverequests` | Get all requests | ✅ |
+| `GET` | `/api/leaverequests/pending` | Get pending only | Mgr/Admin |
+| `POST` | `/api/leaverequests` | Create (checks balance) | ✅ |
+| `POST` | `/api/leaverequests/{id}/approve` | Approve | Mgr/Admin |
+| `POST` | `/api/leaverequests/{id}/reject` | Reject | Mgr/Admin |
+
+---
+
+# 🔌 API Endpoints - Leave Balance
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `GET` | `/api/leavebalance/my` | Get my balances | ✅ |
+| `GET` | `/api/leavebalance/employee/{id}` | Get employee's balance | Mgr/Admin |
 
 ---
 
 # ✨ Key Features
 
-### Business Validations
+### Security & Business Validations
 
-- ✅ **Email uniqueness** - No duplicate employee emails
-- ✅ **Date validation** - End date must be ≥ Start date
-- ✅ **No past dates** - Can't request leave for past dates
-- ✅ **Overlap detection** - Prevents double-booking leaves
-- ✅ **Status constraints** - Only pending requests can be approved/rejected
+- 🔐 **JWT Authentication** - Access + Refresh tokens
+- 👥 **Role-based Access** - Admin, Manager, Employee
+- 📊 **Balance Tracking** - Auto-deduct on approval
+- 📧 **Email Notifications** - Request/approval alerts
+- 📝 **Audit Logging** - Track all actions
+- ✅ **Overlap detection** - Prevents double-booking
+- ✅ **Balance check** - Can't exceed available days
 
 ---
 
@@ -270,9 +318,10 @@ public async Task<ApiResponse<LeaveRequestDto>> CreateAsync(
 | Framework | ASP.NET Core (.NET 10) |
 | Language | C# 12 |
 | ORM | Entity Framework Core 10 |
+| Authentication | JWT Bearer Tokens |
+| Password Hashing | BCrypt |
 | Database | SQL Server / In-Memory |
 | API Docs | OpenAPI 3.0 + Scalar UI |
-| IDE | Visual Studio / VS Code |
 
 ---
 
@@ -284,18 +333,17 @@ public async Task<ApiResponse<LeaveRequestDto>> CreateAsync(
 ### Commands
 
 ```bash
-# Navigate to project folder
-cd LeaveManagementApi
-
-# Restore packages
-dotnet restore
-
-# Run the application
-dotnet run
-
-# Access API Documentation
+dotnet restore && dotnet run
 # Open: http://localhost:5000/scalar/v1
 ```
+
+### Test Credentials
+
+| Email | Role | Password |
+|-------|------|----------|
+| `admin@company.com` | Admin | `Password123!` |
+| `sarah.williams@company.com` | Manager | `Password123!` |
+| `john.doe@company.com` | Employee | `Password123!` |
 
 ---
 
@@ -313,17 +361,20 @@ Access at: `http://localhost:5000/scalar/v1`
 
 ---
 
-# 🔮 Future Enhancements
+# ✅ Implemented Features
 
-| Feature | Priority |
-|---------|----------|
-| JWT Authentication | High |
-| Role-based Authorization | High |
-| Leave Balance Tracking | Medium |
-| Email Notifications | Medium |
-| Audit Logging | Low |
-| Unit Tests | High |
-| Docker Support | Medium |
+| Feature | Status |
+|---------|--------|
+| JWT Authentication | ✅ Done |
+| Role-based Authorization | ✅ Done |
+| Leave Balance Tracking | ✅ Done |
+| Email Notifications | ✅ Done |
+| Audit Logging | ✅ Done |
+
+### Next Steps
+- 🧪 Unit & Integration Tests
+- 🐳 Docker Support
+- 📱 Vue.js Frontend
 
 ---
 

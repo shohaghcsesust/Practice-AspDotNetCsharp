@@ -9,15 +9,27 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ILeaveRequestRepository _leaveRequestRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly ILeaveTypeRepository _leaveTypeRepository;
+    private readonly ILeaveBalanceService _leaveBalanceService;
+    private readonly IEmailService _emailService;
+    private readonly IAuditService _auditService;
+    private readonly ILogger<LeaveRequestService> _logger;
 
     public LeaveRequestService(
         ILeaveRequestRepository leaveRequestRepository,
         IEmployeeRepository employeeRepository,
-        ILeaveTypeRepository leaveTypeRepository)
+        ILeaveTypeRepository leaveTypeRepository,
+        ILeaveBalanceService leaveBalanceService,
+        IEmailService emailService,
+        IAuditService auditService,
+        ILogger<LeaveRequestService> logger)
     {
         _leaveRequestRepository = leaveRequestRepository;
         _employeeRepository = employeeRepository;
         _leaveTypeRepository = leaveTypeRepository;
+        _leaveBalanceService = leaveBalanceService;
+        _emailService = emailService;
+        _auditService = auditService;
+        _logger = logger;
     }
 
     public async Task<IEnumerable<LeaveRequestDto>> GetAllAsync()
@@ -82,7 +94,16 @@ public class LeaveRequestService : ILeaveRequestService
                 "There is already a leave request for the selected dates.");
         }
 
-        var totalDays = (dto.EndDate.Date - dto.StartDate.Date).Days + 1;
+        var totalDays = CalculateBusinessDays(dto.StartDate, dto.EndDate);
+
+        // Check leave balance
+        var hasSufficientBalance = await _leaveBalanceService.HasSufficientBalanceAsync(
+            dto.EmployeeId, dto.LeaveTypeId, totalDays);
+        if (!hasSufficientBalance)
+        {
+            return ApiResponse<LeaveRequestDto>.FailureResponse(
+                "Insufficient leave balance for this leave type.");
+        }
 
         var leaveRequest = new LeaveRequest
         {
@@ -99,10 +120,40 @@ public class LeaveRequestService : ILeaveRequestService
         
         // Reload with navigation properties
         var result = await _leaveRequestRepository.GetByIdAsync(createdRequest.Id);
+
+        // Audit log
+        await _auditService.LogAsync(employee.Id, employee.Email, AuditAction.Create, "LeaveRequest", 
+            createdRequest.Id.ToString(), null, new { leaveRequest.LeaveTypeId, leaveRequest.StartDate, leaveRequest.EndDate });
+
+        // Send email notification to manager
+        if (employee.ManagerId.HasValue)
+        {
+            var manager = await _employeeRepository.GetByIdAsync(employee.ManagerId.Value);
+            if (manager != null)
+            {
+                await _emailService.SendLeaveRequestNotificationAsync(
+                    manager.Email,
+                    $"{employee.FirstName} {employee.LastName}",
+                    dto.StartDate,
+                    dto.EndDate,
+                    leaveType.Name);
+            }
+        }
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
             "Leave request created successfully.");
+    }
+
+    private static int CalculateBusinessDays(DateTime start, DateTime end)
+    {
+        int days = 0;
+        for (var date = start.Date; date <= end.Date; date = date.AddDays(1))
+        {
+            if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                days++;
+        }
+        return days > 0 ? days : 1; // At least 1 day
     }
 
     public async Task<ApiResponse<LeaveRequestDto>> UpdateAsync(int id, UpdateLeaveRequestDto dto)
@@ -181,15 +232,38 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<LeaveRequestDto>.FailureResponse("Approver not found.");
         }
 
+        var oldStatus = leaveRequest.Status;
         leaveRequest.Status = LeaveStatus.Approved;
         leaveRequest.ApprovedById = dto.ApprovedById;
         leaveRequest.ApprovedAt = DateTime.UtcNow;
         leaveRequest.ApproverComments = dto.Comments;
 
         await _leaveRequestRepository.UpdateAsync(leaveRequest);
+
+        // Deduct leave balance
+        await _leaveBalanceService.DeductBalanceAsync(
+            leaveRequest.EmployeeId, 
+            leaveRequest.LeaveTypeId, 
+            leaveRequest.TotalDays);
         
         // Reload with navigation properties
         var result = await _leaveRequestRepository.GetByIdAsync(id);
+
+        // Audit log
+        await _auditService.LogAsync(approver.Id, approver.Email, AuditAction.Approve, "LeaveRequest",
+            id.ToString(), new { Status = oldStatus.ToString() }, new { Status = leaveRequest.Status.ToString() });
+
+        // Send email notification to employee
+        if (result?.Employee != null)
+        {
+            await _emailService.SendLeaveApprovalNotificationAsync(
+                result.Employee.Email,
+                $"{result.Employee.FirstName} {result.Employee.LastName}",
+                result.StartDate,
+                result.EndDate,
+                true,
+                dto.Comments);
+        }
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
@@ -217,6 +291,7 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<LeaveRequestDto>.FailureResponse("Approver not found.");
         }
 
+        var oldStatus = leaveRequest.Status;
         leaveRequest.Status = LeaveStatus.Rejected;
         leaveRequest.ApprovedById = dto.ApprovedById;
         leaveRequest.ApprovedAt = DateTime.UtcNow;
@@ -226,6 +301,22 @@ public class LeaveRequestService : ILeaveRequestService
         
         // Reload with navigation properties
         var result = await _leaveRequestRepository.GetByIdAsync(id);
+
+        // Audit log
+        await _auditService.LogAsync(approver.Id, approver.Email, AuditAction.Reject, "LeaveRequest",
+            id.ToString(), new { Status = oldStatus.ToString() }, new { Status = leaveRequest.Status.ToString() });
+
+        // Send email notification to employee
+        if (result?.Employee != null)
+        {
+            await _emailService.SendLeaveApprovalNotificationAsync(
+                result.Employee.Email,
+                $"{result.Employee.FirstName} {result.Employee.LastName}",
+                result.StartDate,
+                result.EndDate,
+                false,
+                dto.Comments);
+        }
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
@@ -246,12 +337,29 @@ public class LeaveRequestService : ILeaveRequestService
                 "Leave request is already cancelled.");
         }
 
+        var wasApproved = leaveRequest.Status == LeaveStatus.Approved;
         leaveRequest.Status = LeaveStatus.Cancelled;
 
         await _leaveRequestRepository.UpdateAsync(leaveRequest);
+
+        // If the leave was approved, restore the balance
+        if (wasApproved)
+        {
+            await _leaveBalanceService.RestoreBalanceAsync(
+                leaveRequest.EmployeeId,
+                leaveRequest.LeaveTypeId,
+                leaveRequest.TotalDays);
+        }
         
         // Reload with navigation properties
         var result = await _leaveRequestRepository.GetByIdAsync(id);
+
+        // Audit log
+        if (result?.Employee != null)
+        {
+            await _auditService.LogAsync(result.EmployeeId, result.Employee.Email, AuditAction.Update, "LeaveRequest",
+                id.ToString(), new { Status = wasApproved ? "Approved" : "Pending" }, new { Status = "Cancelled" });
+        }
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 

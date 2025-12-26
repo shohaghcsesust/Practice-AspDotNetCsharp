@@ -1,5 +1,6 @@
 using LeaveManagementApi.DTOs;
 using LeaveManagementApi.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LeaveManagementApi.Controllers;
@@ -7,6 +8,7 @@ namespace LeaveManagementApi.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
 public class LeaveRequestsController : ControllerBase
 {
     private readonly ILeaveRequestService _leaveRequestService;
@@ -17,9 +19,10 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Get all leave requests
+    /// Get all leave requests (Admin only)
     /// </summary>
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(IEnumerable<LeaveRequestDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<LeaveRequestDto>>> GetAll()
     {
@@ -28,9 +31,10 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Get pending leave requests
+    /// Get pending leave requests (Manager/Admin only)
     /// </summary>
     [HttpGet("pending")]
+    [Authorize(Roles = "Manager,Admin")]
     [ProducesResponseType(typeof(IEnumerable<LeaveRequestDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<LeaveRequestDto>>> GetPending()
     {
@@ -115,9 +119,10 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Approve a leave request
+    /// Approve a leave request (Manager/Admin only)
     /// </summary>
     [HttpPost("{id}/approve")]
+    [Authorize(Roles = "Manager,Admin")]
     [ProducesResponseType(typeof(ApiResponse<LeaveRequestDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<LeaveRequestDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -142,9 +147,10 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Reject a leave request
+    /// Reject a leave request (Manager/Admin only)
     /// </summary>
     [HttpPost("{id}/reject")]
+    [Authorize(Roles = "Manager,Admin")]
     [ProducesResponseType(typeof(ApiResponse<LeaveRequestDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<LeaveRequestDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -191,9 +197,10 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Delete a leave request
+    /// Delete a leave request (Admin only)
     /// </summary>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)

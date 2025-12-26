@@ -1,5 +1,6 @@
 using LeaveManagementApi.DTOs;
 using LeaveManagementApi.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LeaveManagementApi.Controllers;
@@ -7,6 +8,7 @@ namespace LeaveManagementApi.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
 public class LeaveTypesController : ControllerBase
 {
     private readonly ILeaveTypeService _leaveTypeService;
@@ -55,9 +57,10 @@ public class LeaveTypesController : ControllerBase
     }
 
     /// <summary>
-    /// Create a new leave type
+    /// Create a new leave type (Admin only)
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<LeaveTypeDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<LeaveTypeDto>), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<ApiResponse<LeaveTypeDto>>> Create([FromBody] CreateLeaveTypeDto dto)
@@ -77,9 +80,10 @@ public class LeaveTypesController : ControllerBase
     }
 
     /// <summary>
-    /// Update an existing leave type
+    /// Update an existing leave type (Admin only)
     /// </summary>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<LeaveTypeDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<LeaveTypeDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -104,9 +108,10 @@ public class LeaveTypesController : ControllerBase
     }
 
     /// <summary>
-    /// Delete a leave type
+    /// Delete a leave type (Admin only)
     /// </summary>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)

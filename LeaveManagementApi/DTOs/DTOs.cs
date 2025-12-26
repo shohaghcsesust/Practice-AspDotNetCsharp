@@ -2,6 +2,110 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LeaveManagementApi.DTOs;
 
+// ==================== Authentication DTOs ====================
+
+public class RegisterRequest
+{
+    [Required]
+    [MaxLength(100)]
+    public string FirstName { get; set; } = string.Empty;
+
+    [Required]
+    [MaxLength(100)]
+    public string LastName { get; set; } = string.Empty;
+
+    [Required]
+    [EmailAddress]
+    [MaxLength(150)]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(6)]
+    public string Password { get; set; } = string.Empty;
+
+    public int? ManagerId { get; set; }
+
+    [MaxLength(100)]
+    public string? Department { get; set; }
+
+    [MaxLength(100)]
+    public string? Position { get; set; }
+}
+
+public class LoginRequest
+{
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    public string Password { get; set; } = string.Empty;
+}
+
+public class RefreshTokenRequest
+{
+    [Required]
+    public string RefreshToken { get; set; } = string.Empty;
+}
+
+public class AuthResponse
+{
+    public string AccessToken { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public UserDto User { get; set; } = null!;
+}
+
+public class UserDto
+{
+    public int Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public int? ManagerId { get; set; }
+    public string Department { get; set; } = string.Empty;
+    public string Position { get; set; } = string.Empty;
+}
+
+// ==================== Leave Balance DTOs ====================
+
+public class LeaveBalanceDto
+{
+    public int Id { get; set; }
+    public int EmployeeId { get; set; }
+    public int LeaveTypeId { get; set; }
+    public string LeaveTypeName { get; set; } = string.Empty;
+    public int Year { get; set; }
+    public decimal TotalDays { get; set; }
+    public decimal UsedDays { get; set; }
+    public decimal RemainingDays { get; set; }
+}
+
+public class AdjustBalanceDto
+{
+    [Required]
+    [Range(0, 365)]
+    public decimal TotalDays { get; set; }
+}
+
+// ==================== Audit Log DTOs ====================
+
+public class AuditLogDto
+{
+    public int Id { get; set; }
+    public int? UserId { get; set; }
+    public string UserEmail { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string? EntityId { get; set; }
+    public string? OldValues { get; set; }
+    public string? NewValues { get; set; }
+    public string? IpAddress { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
 // ==================== Employee DTOs ====================
 
 public class EmployeeDto
@@ -13,6 +117,8 @@ public class EmployeeDto
     public string Email { get; set; } = string.Empty;
     public string Department { get; set; } = string.Empty;
     public string Position { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public int? ManagerId { get; set; }
     public DateTime HireDate { get; set; }
     public bool IsActive { get; set; }
 }

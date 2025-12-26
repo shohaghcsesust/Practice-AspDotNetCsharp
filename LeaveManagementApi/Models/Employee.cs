@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LeaveManagementApi.Models;
 
@@ -20,6 +21,16 @@ public class Employee
     [MaxLength(150)]
     public string Email { get; set; } = string.Empty;
 
+    [MaxLength(256)]
+    public string PasswordHash { get; set; } = string.Empty;
+
+    public Role Role { get; set; } = Role.Employee;
+
+    public int? ManagerId { get; set; }
+
+    [ForeignKey("ManagerId")]
+    public virtual Employee? Manager { get; set; }
+
     [MaxLength(100)]
     public string Department { get; set; } = string.Empty;
 
@@ -34,6 +45,9 @@ public class Employee
 
     public DateTime? UpdatedAt { get; set; }
 
-    // Navigation property
+    // Navigation properties
     public virtual ICollection<LeaveRequest> LeaveRequests { get; set; } = new List<LeaveRequest>();
+    public virtual ICollection<LeaveBalance> LeaveBalances { get; set; } = new List<LeaveBalance>();
+    public virtual ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 }
+

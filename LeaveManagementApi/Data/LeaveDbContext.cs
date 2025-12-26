@@ -12,6 +12,9 @@ public class LeaveDbContext : DbContext
     public DbSet<Employee> Employees { get; set; }
     public DbSet<LeaveType> LeaveTypes { get; set; }
     public DbSet<LeaveRequest> LeaveRequests { get; set; }
+    public DbSet<LeaveBalance> LeaveBalances { get; set; }
+    public DbSet<AuditLog> AuditLogs { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +27,11 @@ public class LeaveDbContext : DbContext
             entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Email).IsRequired().HasMaxLength(150);
+            
+            entity.HasOne(e => e.Manager)
+                  .WithMany()
+                  .HasForeignKey(e => e.ManagerId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         // LeaveType configuration
@@ -50,6 +58,31 @@ public class LeaveDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(lr => lr.ApprovedById)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // LeaveBalance configuration
+        modelBuilder.Entity<LeaveBalance>(entity =>
+        {
+            entity.HasIndex(e => new { e.EmployeeId, e.LeaveTypeId, e.Year }).IsUnique();
+            
+            entity.HasOne(lb => lb.Employee)
+                  .WithMany(e => e.LeaveBalances)
+                  .HasForeignKey(lb => lb.EmployeeId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lb => lb.LeaveType)
+                  .WithMany()
+                  .HasForeignKey(lb => lb.LeaveTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // RefreshToken configuration
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasOne(rt => rt.Employee)
+                  .WithMany(e => e.RefreshTokens)
+                  .HasForeignKey(rt => rt.EmployeeId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

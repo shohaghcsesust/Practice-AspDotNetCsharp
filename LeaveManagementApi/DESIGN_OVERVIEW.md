@@ -4,13 +4,14 @@
 1. [Project Overview](#project-overview)
 2. [Architecture](#architecture)
 3. [Project Structure](#project-structure)
-4. [Design Patterns](#design-patterns)
-5. [Database Design](#database-design)
-6. [API Endpoints](#api-endpoints)
-7. [Data Flow](#data-flow)
-8. [Technology Stack](#technology-stack)
-9. [Configuration](#configuration)
-10. [Getting Started](#getting-started)
+4. [Authentication & Authorization](#authentication--authorization)
+5. [Design Patterns](#design-patterns)
+6. [Database Design](#database-design)
+7. [API Endpoints](#api-endpoints)
+8. [Data Flow](#data-flow)
+9. [Technology Stack](#technology-stack)
+10. [Configuration](#configuration)
+11. [Getting Started](#getting-started)
 
 ---
 
@@ -18,10 +19,14 @@
 
 The **Leave Management API** is a RESTful web service built with ASP.NET Core that allows organizations to manage employee leave requests. The system supports:
 
+- **JWT Authentication & Authorization** with role-based access control
+- **Role-based access** (Admin, Manager, Employee)
 - Employee management (CRUD operations)
 - Leave type configuration (Annual, Sick, Casual, etc.)
 - Leave request submission, approval, and rejection
-- Leave request status tracking
+- **Leave balance tracking** with automatic deduction/restoration
+- **Email notifications** for leave requests and approvals
+- **Audit logging** for all important actions
 
 ---
 
@@ -33,21 +38,23 @@ The project follows a **Clean/Layered Architecture** with clear separation of co
 ┌─────────────────────────────────────────────────────────────┐
 │                      Presentation Layer                      │
 │                        (Controllers)                         │
-│  ┌─────────────────┬─────────────────┬─────────────────┐    │
-│  │ EmployeesCtrl   │ LeaveTypesCtrl  │ LeaveRequestsCtrl│    │
-│  └────────┬────────┴────────┬────────┴────────┬────────┘    │
-└───────────┼─────────────────┼─────────────────┼─────────────┘
-            │                 │                 │
-            ▼                 ▼                 ▼
+│  ┌───────────┬───────────┬───────────┬───────────┬────────┐ │
+│  │ AuthCtrl  │Employees  │LeaveTypes │LeaveReqs  │AdminCtrl│ │
+│  │           │  Ctrl     │   Ctrl    │   Ctrl    │         │ │
+│  └─────┬─────┴─────┬─────┴─────┬─────┴─────┬─────┴────┬────┘ │
+└────────┼───────────┼───────────┼───────────┼──────────┼──────┘
+         │           │           │           │          │
+         ▼           ▼           ▼           ▼          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Business Layer                          │
 │                        (Services)                            │
-│  ┌─────────────────┬─────────────────┬─────────────────┐    │
-│  │ EmployeeService │ LeaveTypeService│LeaveRequestSvc  │    │
-│  └────────┬────────┴────────┬────────┴────────┬────────┘    │
-└───────────┼─────────────────┼─────────────────┼─────────────┘
-            │                 │                 │
-            ▼                 ▼                 ▼
+│  ┌─────────┬─────────┬─────────┬─────────┬─────────┬──────┐ │
+│  │AuthSvc  │JwtSvc   │EmailSvc │AuditSvc │LeaveBal │Others│ │
+│  │         │         │         │         │  Svc    │      │ │
+│  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┴──────┘ │
+└───────┼─────────┼─────────┼─────────┼─────────┼─────────────┘
+        │         │         │         │         │
+        ▼         ▼         ▼         ▼         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Data Access Layer                       │
 │                       (Repositories)                         │
@@ -78,11 +85,24 @@ The project follows a **Clean/Layered Architecture** with clear separation of co
 LeaveManagementApi/
 │
 ├── Controllers/                    # API Endpoints (Presentation Layer)
+│   ├── AuthController.cs           # Authentication endpoints (login, register, refresh)
+│   ├── AdminController.cs          # Admin-only endpoints (users, audit logs, balance adjustment)
 │   ├── EmployeesController.cs      # Employee CRUD endpoints
 │   ├── LeaveTypesController.cs     # Leave Type CRUD endpoints
-│   └── LeaveRequestsController.cs  # Leave Request management endpoints
+│   ├── LeaveRequestsController.cs  # Leave Request management endpoints
+│   └── LeaveBalanceController.cs   # Leave balance viewing endpoints
 │
 ├── Services/                       # Business Logic Layer
+│   ├── IAuthService.cs             # Authentication service interface
+│   ├── AuthService.cs              # Authentication service implementation
+│   ├── IJwtService.cs              # JWT token service interface
+│   ├── JwtService.cs               # JWT token generation/validation
+│   ├── IEmailService.cs            # Email service interface
+│   ├── EmailService.cs             # Email notification service
+│   ├── IAuditService.cs            # Audit logging interface
+│   ├── AuditService.cs             # Audit logging implementation
+│   ├── ILeaveBalanceService.cs     # Leave balance service interface
+│   ├── LeaveBalanceService.cs      # Leave balance tracking
 │   ├── IEmployeeService.cs         # Employee service interface
 │   ├── EmployeeService.cs          # Employee service implementation
 │   ├── ILeaveTypeService.cs        # Leave Type service interface
@@ -99,21 +119,80 @@ LeaveManagementApi/
 │   └── LeaveRequestRepository.cs   # Leave Request repository implementation
 │
 ├── Models/                         # Domain Entities
-│   ├── Employee.cs                 # Employee entity
+│   ├── Employee.cs                 # Employee entity (with Role, PasswordHash, ManagerId)
 │   ├── LeaveType.cs                # Leave Type entity
-│   └── LeaveRequest.cs             # Leave Request entity + LeaveStatus enum
+│   ├── LeaveRequest.cs             # Leave Request entity + LeaveStatus enum
+│   ├── LeaveBalance.cs             # Leave Balance entity (tracks used/remaining days)
+│   ├── Role.cs                     # Role enum (Employee, Manager, Admin)
+│   ├── AuditLog.cs                 # Audit Log entity + AuditAction enum
+│   └── RefreshToken.cs             # Refresh Token entity for JWT
 │
 ├── DTOs/                           # Data Transfer Objects
-│   └── DTOs.cs                     # All DTOs for API requests/responses
+│   └── DTOs.cs                     # All DTOs (Auth, Employee, LeaveType, LeaveRequest, etc.)
+│
+├── Configuration/                  # Configuration Classes
+│   ├── JwtSettings.cs              # JWT configuration settings
+│   └── EmailSettings.cs            # Email/SMTP configuration settings
 │
 ├── Data/                           # Database Configuration
 │   ├── LeaveDbContext.cs           # EF Core DbContext
-│   └── DbInitializer.cs            # Seed data initializer
+│   └── DbInitializer.cs            # Seed data (users with roles, leave balances)
 │
-├── Program.cs                      # Application entry point & DI configuration
-├── appsettings.json                # Application configuration
+├── Program.cs                      # Application entry point, DI & JWT configuration
+├── appsettings.json                # Application configuration (JWT, Email settings)
 ├── appsettings.Development.json    # Development-specific configuration
 └── LeaveManagementApi.csproj       # Project file with dependencies
+```
+
+---
+
+## Authentication & Authorization
+
+### JWT Authentication Flow
+
+```
+┌─────────┐     POST /api/auth/login      ┌─────────────────┐
+│  Client │──────────────────────────────▶│  AuthController │
+└─────────┘  { email, password }          └────────┬────────┘
+                                                   │
+                                                   ▼
+                                          ┌─────────────────┐
+                                          │   AuthService   │
+                                          │  - Verify pwd   │
+                                          │  - Generate JWT │
+                                          └────────┬────────┘
+                                                   │
+                                                   ▼
+┌─────────┐     { accessToken, refreshToken }     │
+│  Client │◀──────────────────────────────────────┘
+└─────────┘
+
+┌─────────┐     GET /api/employees        ┌─────────────────┐
+│  Client │──────────────────────────────▶│    JWT Auth     │
+└─────────┘  Authorization: Bearer <token>│   Middleware    │
+                                          └────────┬────────┘
+                                                   │ Valid?
+                                                   ▼
+                                          ┌─────────────────┐
+                                          │ EmployeesCtrl   │
+                                          │ [Authorize]     │
+                                          └─────────────────┘
+```
+
+### Role-Based Access Control
+
+| Role | Permissions |
+|------|-------------|
+| **Employee** | View own leave requests, create requests, view balances, view leave types |
+| **Manager** | All Employee permissions + approve/reject team leave requests, view pending requests |
+| **Admin** | Full access: manage users, roles, leave types, view audit logs, adjust balances |
+
+### Authorization Attributes
+
+```csharp
+[Authorize]                          // Any authenticated user
+[Authorize(Roles = "Admin")]         // Admin only
+[Authorize(Roles = "Manager,Admin")] // Manager or Admin
 ```
 
 ---
@@ -219,44 +298,59 @@ public class EmployeeDto
 ### Entity Relationship Diagram
 
 ```
-┌──────────────────┐       ┌──────────────────┐
-│    Employee      │       │    LeaveType     │
-├──────────────────┤       ├──────────────────┤
-│ Id (PK)          │       │ Id (PK)          │
-│ FirstName        │       │ Name             │
-│ LastName         │       │ Description      │
-│ Email (Unique)   │       │ DefaultDays      │
-│ Department       │       │ IsActive         │
-│ Position         │       │ CreatedAt        │
-│ HireDate         │       │ UpdatedAt        │
-│ IsActive         │       └────────┬─────────┘
-│ CreatedAt        │                │
-│ UpdatedAt        │                │
-└────────┬─────────┘                │
-         │                          │
-         │    ┌─────────────────────┘
-         │    │
-         ▼    ▼
-┌──────────────────────────┐
-│      LeaveRequest        │
-├──────────────────────────┤
-│ Id (PK)                  │
-│ EmployeeId (FK)          │──────→ Employee
-│ LeaveTypeId (FK)         │──────→ LeaveType
-│ StartDate                │
-│ EndDate                  │
-│ TotalDays                │
-│ Reason                   │
-│ Status (Enum)            │
-│ ApproverComments         │
-│ ApprovedById (FK)        │──────→ Employee
-│ ApprovedAt               │
-│ CreatedAt                │
-│ UpdatedAt                │
-└──────────────────────────┘
+┌─────────────────────────┐       ┌──────────────────┐
+│       Employee          │       │    LeaveType     │
+├─────────────────────────┤       ├──────────────────┤
+│ Id (PK)                 │       │ Id (PK)          │
+│ FirstName               │       │ Name             │
+│ LastName                │       │ Description      │
+│ Email (Unique)          │       │ DefaultDays      │
+│ PasswordHash            │       │ IsActive         │
+│ Role (Enum)             │       │ CreatedAt        │
+│ ManagerId (FK, nullable)│──┐    │ UpdatedAt        │
+│ Department              │  │    └────────┬─────────┘
+│ Position                │  │             │
+│ HireDate                │◀─┘ (self-ref)  │
+│ IsActive                │                │
+│ CreatedAt               │                │
+│ UpdatedAt               │                │
+└───────────┬─────────────┘                │
+            │                              │
+            │    ┌─────────────────────────┘
+            │    │
+            ▼    ▼
+┌────────────────────────────┐    ┌─────────────────────────┐
+│       LeaveRequest         │    │      LeaveBalance       │
+├────────────────────────────┤    ├─────────────────────────┤
+│ Id (PK)                    │    │ Id (PK)                 │
+│ EmployeeId (FK)            │───▶│ EmployeeId (FK)         │◀──Employee
+│ LeaveTypeId (FK)           │───▶│ LeaveTypeId (FK)        │◀──LeaveType
+│ StartDate                  │    │ Year                    │
+│ EndDate                    │    │ TotalDays               │
+│ TotalDays                  │    │ UsedDays                │
+│ Reason                     │    │ RemainingDays (computed)│
+│ Status (Enum)              │    │ CreatedAt               │
+│ ApproverComments           │    │ UpdatedAt               │
+│ ApprovedById (FK)          │───▶└─────────────────────────┘
+│ ApprovedAt                 │
+│ CreatedAt                  │
+│ UpdatedAt                  │    ┌─────────────────────────┐
+└────────────────────────────┘    │       AuditLog          │
+                                  ├─────────────────────────┤
+┌─────────────────────────┐       │ Id (PK)                 │
+│      RefreshToken       │       │ UserId                  │
+├─────────────────────────┤       │ Action (Enum)           │
+│ Id (PK)                 │       │ EntityType              │
+│ Token                   │       │ EntityId                │
+│ EmployeeId (FK)         │──────▶│ Details                 │
+│ Expires                 │       │ IpAddress               │
+│ Created                 │       │ CreatedAt               │
+│ Revoked                 │       └─────────────────────────┘
+│ ReplacedByToken         │
+└─────────────────────────┘
 ```
 
-### Leave Status Enum
+### Enums
 
 ```csharp
 public enum LeaveStatus
@@ -266,47 +360,92 @@ public enum LeaveStatus
     Rejected = 2,   // Rejected by manager
     Cancelled = 3   // Cancelled by employee
 }
+
+public enum Role
+{
+    Employee = 0,   // Regular employee
+    Manager = 1,    // Can approve/reject team requests
+    Admin = 2       // Full system access
+}
+
+public enum AuditAction
+{
+    Create = 0,
+    Update = 1,
+    Delete = 2,
+    Login = 3,
+    Logout = 4,
+    Approve = 5,
+    Reject = 6
+}
 ```
 
 ---
 
 ## API Endpoints
 
+### Authentication API
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `POST` | `/api/auth/register` | Register new user | No |
+| `POST` | `/api/auth/login` | Login and get tokens | No |
+| `POST` | `/api/auth/refresh` | Refresh access token | No |
+| `POST` | `/api/auth/logout` | Logout and revoke token | Yes |
+
+### Admin API
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/admin/users` | Get all users | Admin |
+| `GET` | `/api/admin/users/{id}` | Get user by ID | Admin |
+| `PUT` | `/api/admin/users/{id}/role` | Update user role | Admin |
+| `GET` | `/api/admin/audit-logs` | Get all audit logs | Admin |
+| `POST` | `/api/admin/leave-balance/adjust` | Adjust employee balance | Admin |
+
 ### Employees API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/employees` | Get all employees |
-| `GET` | `/api/employees/{id}` | Get employee by ID |
-| `POST` | `/api/employees` | Create new employee |
-| `PUT` | `/api/employees/{id}` | Update employee |
-| `DELETE` | `/api/employees/{id}` | Delete employee |
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/employees` | Get all employees | Yes |
+| `GET` | `/api/employees/{id}` | Get employee by ID | Yes |
+| `POST` | `/api/employees` | Create new employee | Admin |
+| `PUT` | `/api/employees/{id}` | Update employee | Admin |
+| `DELETE` | `/api/employees/{id}` | Delete employee | Admin |
 
 ### Leave Types API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/leavetypes` | Get all leave types |
-| `GET` | `/api/leavetypes/active` | Get active leave types only |
-| `GET` | `/api/leavetypes/{id}` | Get leave type by ID |
-| `POST` | `/api/leavetypes` | Create new leave type |
-| `PUT` | `/api/leavetypes/{id}` | Update leave type |
-| `DELETE` | `/api/leavetypes/{id}` | Delete leave type |
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/leavetypes` | Get all leave types | Yes |
+| `GET` | `/api/leavetypes/active` | Get active leave types only | Yes |
+| `GET` | `/api/leavetypes/{id}` | Get leave type by ID | Yes |
+| `POST` | `/api/leavetypes` | Create new leave type | Admin |
+| `PUT` | `/api/leavetypes/{id}` | Update leave type | Admin |
+| `DELETE` | `/api/leavetypes/{id}` | Delete leave type | Admin |
 
 ### Leave Requests API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/leaverequests` | Get all leave requests |
-| `GET` | `/api/leaverequests/pending` | Get pending requests |
-| `GET` | `/api/leaverequests/employee/{employeeId}` | Get requests by employee |
-| `GET` | `/api/leaverequests/{id}` | Get request by ID |
-| `POST` | `/api/leaverequests` | Create new request |
-| `PUT` | `/api/leaverequests/{id}` | Update pending request |
-| `POST` | `/api/leaverequests/{id}/approve` | Approve request |
-| `POST` | `/api/leaverequests/{id}/reject` | Reject request |
-| `POST` | `/api/leaverequests/{id}/cancel` | Cancel request |
-| `DELETE` | `/api/leaverequests/{id}` | Delete request |
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/leaverequests` | Get all leave requests | Yes |
+| `GET` | `/api/leaverequests/pending` | Get pending requests | Yes |
+| `GET` | `/api/leaverequests/employee/{employeeId}` | Get requests by employee | Yes |
+| `GET` | `/api/leaverequests/{id}` | Get request by ID | Yes |
+| `POST` | `/api/leaverequests` | Create new request (checks balance) | Yes |
+| `PUT` | `/api/leaverequests/{id}` | Update pending request | Yes |
+| `POST` | `/api/leaverequests/{id}/approve` | Approve request | Manager, Admin |
+| `POST` | `/api/leaverequests/{id}/reject` | Reject request | Manager, Admin |
+| `POST` | `/api/leaverequests/{id}/cancel` | Cancel request | Yes |
+| `DELETE` | `/api/leaverequests/{id}` | Delete request | Admin |
+
+### Leave Balance API
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/leavebalance/my` | Get current user's balances | Yes |
+| `GET` | `/api/leavebalance/employee/{employeeId}` | Get employee's balances | Yes |
+| `GET` | `/api/leavebalance/employee/{employeeId}/year/{year}` | Get balances by year | Yes |
 
 ---
 
@@ -357,6 +496,8 @@ public enum LeaveStatus
 | **Language** | C# 12 |
 | **ORM** | Entity Framework Core 10 |
 | **Database** | SQL Server / In-Memory (configurable) |
+| **Authentication** | JWT Bearer Tokens |
+| **Password Hashing** | BCrypt |
 | **API Documentation** | OpenAPI 3.0 + Scalar UI |
 | **Dependency Injection** | Built-in ASP.NET Core DI |
 
@@ -382,8 +523,46 @@ builder.Services.AddDbContext<LeaveDbContext>(options =>
 {
   "ConnectionStrings": {
     "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=LeaveManagementDb;Trusted_Connection=True;"
+  },
+  "JwtSettings": {
+    "Secret": "YourSuperSecretKeyThatIsAtLeast32CharactersLong!",
+    "Issuer": "LeaveManagementApi",
+    "Audience": "LeaveManagementApi",
+    "AccessTokenExpirationMinutes": 60,
+    "RefreshTokenExpirationDays": 7
+  },
+  "EmailSettings": {
+    "SmtpServer": "smtp.gmail.com",
+    "SmtpPort": 587,
+    "SenderEmail": "noreply@company.com",
+    "SenderName": "Leave Management System",
+    "Username": "your-email@gmail.com",
+    "Password": "your-app-password",
+    "EnableSsl": true
   }
 }
+```
+
+### JWT Configuration (Program.cs)
+
+```csharp
+// Configure JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtSettings.Secret))
+        };
+    });
 ```
 
 ---
@@ -408,37 +587,75 @@ dotnet run
 # Open browser: http://localhost:5000/scalar/v1
 ```
 
+### Default Test Credentials
+
+The application seeds the following test users on startup:
+
+| Email | Role | Password |
+|-------|------|----------|
+| `admin@company.com` | Admin | `Password123!` |
+| `sarah.williams@company.com` | Manager | `Password123!` |
+| `mike.johnson@company.com` | Manager | `Password123!` |
+| `john.doe@company.com` | Employee | `Password123!` |
+| `jane.smith@company.com` | Employee | `Password123!` |
+
 ### Test API Endpoints
 
 ```bash
-# Get all employees
-curl http://localhost:5000/api/employees
+# 1. Login to get JWT token
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@company.com",
+    "password": "Password123!"
+  }'
 
-# Create a leave request
+# Response: { "accessToken": "eyJ...", "refreshToken": "..." }
+
+# 2. Get all employees (with token)
+curl http://localhost:5000/api/employees \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 3. Create a leave request (with token)
 curl -X POST http://localhost:5000/api/leaverequests \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{
     "employeeId": 1,
     "leaveTypeId": 1,
-    "startDate": "2024-01-15",
-    "endDate": "2024-01-17",
+    "startDate": "2025-01-15",
+    "endDate": "2025-01-17",
     "reason": "Vacation"
   }'
+
+# 4. Get my leave balances
+curl http://localhost:5000/api/leavebalance/my \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 5. Approve a leave request (Manager/Admin only)
+curl -X POST http://localhost:5000/api/leaverequests/1/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{ "comments": "Approved. Enjoy your vacation!" }'
 ```
 
 ---
 
 ## Future Enhancements
 
-- [ ] JWT Authentication & Authorization
-- [ ] Role-based access (Admin, Manager, Employee)
-- [ ] Leave balance tracking
-- [ ] Email notifications
-- [ ] Audit logging
+- [x] JWT Authentication & Authorization ✅
+- [x] Role-based access (Admin, Manager, Employee) ✅
+- [x] Leave balance tracking ✅
+- [x] Email notifications ✅
+- [x] Audit logging ✅
 - [ ] Pagination for large datasets
 - [ ] Unit & Integration tests
+- [ ] Rate limiting
+- [ ] Swagger/OpenAPI authentication UI
+- [ ] Password reset functionality
+- [ ] Two-factor authentication (2FA)
 
 ---
 
-*Document Version: 1.0*  
-*Last Updated: December 2025*
+*Document Version: 2.0*  
+*Last Updated: January 2025*
