@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@microsoft/signalr": "^8.0.0",
     "axios": "^1.6.2",
     "pinia": "^2.1.7",
     "vue": "^3.3.11",

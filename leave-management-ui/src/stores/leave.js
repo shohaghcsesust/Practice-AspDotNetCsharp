@@ -1,21 +1,56 @@
 import { defineStore } from 'pinia'
 import api from '../services/api'
+import { useAuthStore } from './auth'
 
 export const useLeaveStore = defineStore('leave', {
   state: () => ({
     leaveRequests: [],
-    pendingRequests: [],
     leaveTypes: [],
     leaveBalances: [],
+    pendingRequests: [],
     loading: false,
     error: null
   }),
 
+  getters: {
+    getLeaveRequestById: (state) => (id) => {
+      return state.leaveRequests.find(r => r.id === id)
+    },
+    pendingCount: (state) => state.pendingRequests.length,
+    approvedRequests: (state) => state.leaveRequests.filter(r => r.status === 'Approved'),
+    rejectedRequests: (state) => state.leaveRequests.filter(r => r.status === 'Rejected')
+  },
+
   actions: {
-    async fetchMyLeaveRequests(employeeId) {
-      this.loading = true
+    async fetchLeaveTypes() {
       try {
-        const response = await api.get(`/leaverequests/employee/${employeeId}`)
+        this.loading = true
+        const response = await api.get('/api/leavetypes')
+        this.leaveTypes = response.data
+      } catch (error) {
+        this.error = error.response?.data?.message || 'Failed to fetch leave types'
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async fetchMyLeaveRequests() {
+      try {
+        this.loading = true
+        const authStore = useAuthStore()
+        const response = await api.get(`/api/leaverequests/employee/${authStore.user.id}`)
+        this.leaveRequests = response.data
+      } catch (error) {
+        this.error = error.response?.data?.message || 'Failed to fetch leave requests'
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async fetchAllLeaveRequests() {
+      try {
+        this.loading = true
+        const response = await api.get('/api/leaverequests')
         this.leaveRequests = response.data
       } catch (error) {
         this.error = error.response?.data?.message || 'Failed to fetch leave requests'
@@ -25,9 +60,9 @@ export const useLeaveStore = defineStore('leave', {
     },
 
     async fetchPendingRequests() {
-      this.loading = true
       try {
-        const response = await api.get('/leaverequests/pending')
+        this.loading = true
+        const response = await api.get('/api/leaverequests/pending')
         this.pendingRequests = response.data
       } catch (error) {
         this.error = error.response?.data?.message || 'Failed to fetch pending requests'
@@ -36,75 +71,96 @@ export const useLeaveStore = defineStore('leave', {
       }
     },
 
-    async fetchLeaveTypes() {
-      try {
-        const response = await api.get('/leavetypes/active')
-        this.leaveTypes = response.data
-      } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to fetch leave types'
-      }
-    },
-
     async fetchLeaveBalances() {
       try {
-        const response = await api.get('/leavebalance/my-balances')
+        this.loading = true
+        const response = await api.get('/api/leavebalance/my-balances')
         this.leaveBalances = response.data
       } catch (error) {
         this.error = error.response?.data?.message || 'Failed to fetch leave balances'
+      } finally {
+        this.loading = false
       }
     },
 
-    async createLeaveRequest(data) {
+    async createLeaveRequest(requestData) {
       try {
-        const response = await api.post('/leaverequests', data)
-        return { success: response.data.success, data: response.data.data, message: response.data.message }
+        this.loading = true
+        const authStore = useAuthStore()
+        const payload = {
+          ...requestData,
+          employeeId: authStore.user.id
+        }
+        const response = await api.post('/api/leaverequests', payload)
+        const data = response.data.data || response.data
+        if (data) {
+          this.leaveRequests.push(data)
+        }
+        return { success: true, data }
       } catch (error) {
         return {
           success: false,
           message: error.response?.data?.message || 'Failed to create leave request'
         }
+      } finally {
+        this.loading = false
       }
     },
 
-    async approveRequest(id, approvedById, comments) {
+    async approveLeaveRequest(id, comments = '') {
       try {
-        const response = await api.post(`/leaverequests/${id}/approve`, {
-          approvedById,
-          comments
+        this.loading = true
+        const authStore = useAuthStore()
+        await api.post(`/api/leaverequests/${id}/approve`, { 
+          approvedById: authStore.user.id,
+          comments 
         })
-        return { success: response.data.success, message: response.data.message }
+        await this.fetchPendingRequests()
+        return { success: true }
       } catch (error) {
         return {
           success: false,
-          message: error.response?.data?.message || 'Failed to approve request'
+          message: error.response?.data?.message || 'Failed to approve leave request'
         }
+      } finally {
+        this.loading = false
       }
     },
 
-    async rejectRequest(id, approvedById, comments) {
+    async rejectLeaveRequest(id, comments) {
       try {
-        const response = await api.post(`/leaverequests/${id}/reject`, {
-          approvedById,
-          comments
+        this.loading = true
+        const authStore = useAuthStore()
+        await api.post(`/api/leaverequests/${id}/reject`, { 
+          approvedById: authStore.user.id,
+          comments 
         })
-        return { success: response.data.success, message: response.data.message }
+        await this.fetchPendingRequests()
+        return { success: true }
       } catch (error) {
         return {
           success: false,
-          message: error.response?.data?.message || 'Failed to reject request'
+          message: error.response?.data?.message || 'Failed to reject leave request'
         }
+      } finally {
+        this.loading = false
       }
     },
 
-    async cancelRequest(id) {
+    async cancelLeaveRequest(id) {
       try {
-        const response = await api.post(`/leaverequests/${id}/cancel`)
-        return { success: response.data.success, message: response.data.message }
+        this.loading = true
+        await api.post(`/api/leaverequests/${id}/cancel`)
+        this.leaveRequests = this.leaveRequests.filter(r => r.id !== id)
+        await this.fetchMyLeaveRequests()
+        return { success: true }
       } catch (error) {
         return {
           success: false,
-          message: error.response?.data?.message || 'Failed to cancel request'
+          message: error.response?.data?.message || 'Failed to cancel leave request'
         }
+      } finally {
+        this.loading = false
       }
     }
   }

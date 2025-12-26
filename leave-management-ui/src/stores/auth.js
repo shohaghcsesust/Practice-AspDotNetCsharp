@@ -4,23 +4,27 @@ import api from '../services/api'
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: JSON.parse(localStorage.getItem('user')) || null,
-    accessToken: localStorage.getItem('accessToken') || null,
-    refreshTokenValue: localStorage.getItem('refreshToken') || null,
-    expiresAt: localStorage.getItem('expiresAt') || null
+    token: localStorage.getItem('token') || null,
+    refreshToken: localStorage.getItem('refreshToken') || null
   }),
 
   getters: {
-    isAuthenticated: (state) => !!state.accessToken,
+    isAuthenticated: (state) => !!state.token,
     isAdmin: (state) => state.user?.role === 'Admin',
     isManager: (state) => state.user?.role === 'Manager',
-    isManagerOrAdmin: (state) => ['Manager', 'Admin'].includes(state.user?.role)
+    isEmployee: (state) => state.user?.role === 'Employee',
+    isManagerOrAdmin: (state) => state.user?.role === 'Admin' || state.user?.role === 'Manager',
+    fullName: (state) => state.user ? `${state.user.firstName} ${state.user.lastName}` : '',
+    userRole: (state) => state.user?.role || ''
   },
 
   actions: {
     async login(email, password) {
       try {
-        const response = await api.post('/auth/login', { email, password })
-        this.setAuthData(response.data)
+        const response = await api.post('/api/auth/login', { email, password })
+        const { accessToken, refreshToken, user } = response.data
+
+        this.setAuthData(accessToken, refreshToken, user)
         return { success: true }
       } catch (error) {
         return {
@@ -32,66 +36,71 @@ export const useAuthStore = defineStore('auth', {
 
     async register(userData) {
       try {
-        const response = await api.post('/auth/register', userData)
-        this.setAuthData(response.data)
+        const response = await api.post('/api/auth/register', userData)
+        const { accessToken, refreshToken, user } = response.data
+
+        this.setAuthData(accessToken, refreshToken, user)
         return { success: true }
       } catch (error) {
         return {
           success: false,
-          message: error.response?.data?.message || 'Registration failed'
+          message: error.response?.data?.message || 'Registration failed',
+          errors: error.response?.data?.errors
         }
       }
     },
 
-    async refreshToken() {
+    async refreshAccessToken() {
       try {
-        const response = await api.post('/auth/refresh', {
-          refreshToken: this.refreshTokenValue
+        const response = await api.post('/api/auth/refresh', {
+          refreshToken: this.refreshToken
         })
-        this.setAuthData(response.data)
+        const { accessToken, refreshToken } = response.data
+
+        this.token = accessToken
+        this.refreshToken = refreshToken
+        localStorage.setItem('token', accessToken)
+        localStorage.setItem('refreshToken', refreshToken)
+
         return true
       } catch (error) {
-        this.clearAuthData()
-        throw error
+        this.logout()
+        return false
       }
     },
 
-    async logout() {
-      try {
-        if (this.refreshTokenValue) {
-          await api.post('/auth/logout', {
-            refreshToken: this.refreshTokenValue
-          })
-        }
-      } catch (error) {
-        console.error('Logout error:', error)
-      } finally {
-        this.clearAuthData()
-      }
+    setAuthData(accessToken, refreshToken, user) {
+      this.token = accessToken
+      this.refreshToken = refreshToken
+      this.user = user
+
+      localStorage.setItem('token', accessToken)
+      localStorage.setItem('refreshToken', refreshToken)
+      localStorage.setItem('user', JSON.stringify(user))
     },
 
-    setAuthData(data) {
-      this.user = data.user
-      this.accessToken = data.accessToken
-      this.refreshTokenValue = data.refreshToken
-      this.expiresAt = data.expiresAt
-
-      localStorage.setItem('user', JSON.stringify(data.user))
-      localStorage.setItem('accessToken', data.accessToken)
-      localStorage.setItem('refreshToken', data.refreshToken)
-      localStorage.setItem('expiresAt', data.expiresAt)
-    },
-
-    clearAuthData() {
+    logout() {
+      this.token = null
+      this.refreshToken = null
       this.user = null
-      this.accessToken = null
-      this.refreshTokenValue = null
-      this.expiresAt = null
 
-      localStorage.removeItem('user')
-      localStorage.removeItem('accessToken')
+      localStorage.removeItem('token')
       localStorage.removeItem('refreshToken')
-      localStorage.removeItem('expiresAt')
+      localStorage.removeItem('user')
+    },
+
+    async updateProfile(userData) {
+      try {
+        const response = await api.put(`/api/employees/${this.user.id}`, userData)
+        this.user = { ...this.user, ...response.data }
+        localStorage.setItem('user', JSON.stringify(this.user))
+        return { success: true }
+      } catch (error) {
+        return {
+          success: false,
+          message: error.response?.data?.message || 'Profile update failed' 
+        }
+      }
     }
   }
 })

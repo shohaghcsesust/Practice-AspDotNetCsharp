@@ -3,129 +3,185 @@
     <div class="px-4 py-6 sm:px-0">
       <div class="flex justify-between items-center mb-8">
         <h1 class="text-3xl font-bold text-gray-900">Employees</h1>
+        <button 
+          @click="showAddModal = true"
+          class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition"
+        >
+          Add Employee
+        </button>
       </div>
-
-      <!-- Loading State -->
-      <div v-if="loading" class="text-center py-12">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-      </div>
-
-      <!-- Employees Table -->
-      <div v-else class="bg-white shadow overflow-hidden sm:rounded-lg">
-        <table class="min-w-full divide-y divide-gray-200">
+      
+      <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div v-if="loading" class="text-center py-8">Loading...</div>
+        <div v-else-if="employees.length === 0" class="text-center py-8 text-gray-500">
+          No employees found
+        </div>
+        <table v-else class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Employee
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Email
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Department
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Position
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Role
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr v-for="employee in employees" :key="employee.id">
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center">
-                  <div class="h-10 w-10 flex-shrink-0">
-                    <div class="h-10 w-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-medium">
-                      {{ getInitials(employee) }}
-                    </div>
-                  </div>
-                  <div class="ml-4">
-                    <div class="text-sm font-medium text-gray-900">
-                      {{ employee.firstName }} {{ employee.lastName }}
-                    </div>
-                  </div>
-                </div>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                {{ employee.firstName }} {{ employee.lastName }}
               </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">{{ employee.email }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">{{ employee.department || '-' }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">{{ employee.position || '-' }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <select
-                  :value="employee.role"
-                  @change="updateRole(employee.id, $event.target.value)"
-                  class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="Employee">Employee</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Admin">Admin</option>
-                </select>
-              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ employee.email }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ employee.department }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ employee.position }}</td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <span
-                  class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full"
-                  :class="employee.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
+                  :class="roleClass(employee.role)"
+                  class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                 >
-                  {{ employee.isActive ? 'Active' : 'Inactive' }}
+                  {{ employee.role }}
                 </span>
               </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm">
+              <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                 <button
-                  @click="viewBalances(employee.id)"
+                  @click="editEmployee(employee)"
                   class="text-indigo-600 hover:text-indigo-900"
                 >
-                  View Balances
+                  Edit
+                </button>
+                <button
+                  @click="changeRole(employee)"
+                  class="text-blue-600 hover:text-blue-900"
+                >
+                  Change Role
+                </button>
+                <button
+                  @click="deleteEmployee(employee.id)"
+                  class="text-red-600 hover:text-red-900"
+                >
+                  Delete
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+    </div>
 
-      <!-- Balances Modal -->
-      <div v-if="showBalancesModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
-          <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">Leave Balances</h3>
-          </div>
-          <div class="px-6 py-4">
-            <div v-if="loadingBalances" class="text-center py-4">
-              <div class="inline-block animate-spin rounded-full h-6 w-6 border-4 border-indigo-500 border-t-transparent"></div>
-            </div>
-            <div v-else-if="selectedBalances.length === 0" class="text-center py-4 text-gray-500">
-              No leave balances found
-            </div>
-            <div v-else class="space-y-3">
-              <div v-for="balance in selectedBalances" :key="balance.id" class="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <span class="font-medium">{{ balance.leaveTypeName }}</span>
-                <span>
-                  <span class="text-indigo-600 font-semibold">{{ balance.remainingDays }}</span>
-                  <span class="text-gray-500"> / {{ balance.totalDays }} days</span>
-                </span>
+    <!-- Add/Edit Modal -->
+    <div v-if="showAddModal || showEditModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">
+          {{ showEditModal ? 'Edit Employee' : 'Add Employee' }}
+        </h3>
+        <form @submit.prevent="saveEmployee">
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">First Name</label>
+                <input
+                  v-model="form.firstName"
+                  type="text"
+                  required
+                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Last Name</label>
+                <input
+                  v-model="form.lastName"
+                  type="text"
+                  required
+                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
               </div>
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Email</label>
+              <input
+                v-model="form.email"
+                type="email"
+                required
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Department</label>
+              <input
+                v-model="form.department"
+                type="text"
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Position</label>
+              <input
+                v-model="form.position"
+                type="text"
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div v-if="!showEditModal">
+              <label class="block text-sm font-medium text-gray-700">Password</label>
+              <input
+                v-model="form.password"
+                type="password"
+                :required="!showEditModal"
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
           </div>
-          <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+          <div class="flex justify-end space-x-2 mt-6">
             <button
-              @click="showBalancesModal = false"
-              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+              type="button"
+              @click="closeModal"
+              class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400"
             >
-              Close
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+            >
+              {{ showEditModal ? 'Update' : 'Add' }}
             </button>
           </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Change Role Modal -->
+    <div v-if="showRoleModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-sm w-full">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">
+          Change Role for {{ selectedEmployee?.firstName }} {{ selectedEmployee?.lastName }}
+        </h3>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Select Role</label>
+          <select
+            v-model="selectedRole"
+            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="Employee">Employee</option>
+            <option value="Manager">Manager</option>
+            <option value="Admin">Admin</option>
+          </select>
+        </div>
+        <div class="flex justify-end space-x-2">
+          <button
+            type="button"
+            @click="showRoleModal = false"
+            class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400"
+          >
+            Cancel
+          </button>
+          <button
+            @click="updateRole"
+            class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+          >
+            Update Role
+          </button>
         </div>
       </div>
     </div>
@@ -133,58 +189,129 @@
 </template>
 
 <script setup>
-import { ref, onMounted, inject } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import api from '../services/api'
 
-const showToast = inject('showToast')
-
-const loading = ref(true)
 const employees = ref([])
-const showBalancesModal = ref(false)
-const loadingBalances = ref(false)
-const selectedBalances = ref([])
+const loading = ref(false)
+const showAddModal = ref(false)
+const showEditModal = ref(false)
+const showRoleModal = ref(false)
+const editingId = ref(null)
+const selectedEmployee = ref(null)
+const selectedRole = ref('Employee')
 
-const getInitials = (employee) => {
-  return `${employee.firstName[0]}${employee.lastName[0]}`.toUpperCase()
-}
+const form = reactive({
+  firstName: '',
+  lastName: '',
+  email: '',
+  department: '',
+  position: '',
+  password: ''
+})
+
+onMounted(() => {
+  fetchEmployees()
+})
 
 const fetchEmployees = async () => {
+  loading.value = true
   try {
-    const response = await api.get('/admin/users')
+    const response = await api.get('/api/admin/users')
     employees.value = response.data
   } catch (error) {
-    showToast('Failed to fetch employees', 'error')
-  } finally {
-    loading.value = false
+    console.error('Failed to fetch employees:', error)
+  }
+  loading.value = false
+}
+
+const roleClass = (role) => {
+  switch (role) {
+    case 'Admin': return 'bg-purple-100 text-purple-800'
+    case 'Manager': return 'bg-blue-100 text-blue-800'
+    default: return 'bg-gray-100 text-gray-800'
   }
 }
 
-const updateRole = async (id, role) => {
+const editEmployee = (employee) => {
+  editingId.value = employee.id
+  form.firstName = employee.firstName
+  form.lastName = employee.lastName
+  form.email = employee.email
+  form.department = employee.department
+  form.position = employee.position
+  showEditModal.value = true
+}
+
+const changeRole = (employee) => {
+  selectedEmployee.value = employee
+  selectedRole.value = employee.role
+  showRoleModal.value = true
+}
+
+const updateRole = async () => {
   try {
-    await api.put(`/admin/users/${id}/role`, JSON.stringify(role), {
+    await api.put(`/api/admin/users/${selectedEmployee.value.id}/role`, JSON.stringify(selectedRole.value), {
       headers: { 'Content-Type': 'application/json' }
     })
-    showToast('Role updated successfully', 'success')
     await fetchEmployees()
+    showRoleModal.value = false
   } catch (error) {
-    showToast('Failed to update role', 'error')
+    console.error('Failed to update role:', error)
+    alert(error.response?.data?.message || 'Failed to update role')
   }
 }
 
-const viewBalances = async (employeeId) => {
-  showBalancesModal.value = true
-  loadingBalances.value = true
-  selectedBalances.value = []
-
+const saveEmployee = async () => {
   try {
-    const response = await api.get(`/leavebalance/employee/${employeeId}`)
-    selectedBalances.value = response.data
+    if (showEditModal.value) {
+      await api.put(`/api/employees/${editingId.value}`, {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        department: form.department,
+        position: form.position,
+        isActive: true
+      })
+    } else {
+      await api.post('/api/auth/register', {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        password: form.password,
+        department: form.department,
+        position: form.position
+      })
+    }
+    await fetchEmployees()
+    closeModal()
   } catch (error) {
-    showToast('Failed to fetch balances', 'error')
-  } finally {
-    loadingBalances.value = false
+    console.error('Failed to save employee:', error)
+    alert(error.response?.data?.message || 'Failed to save employee')
   }
 }
 
-onMounted(fetchEmployees)
+const deleteEmployee = async (id) => {
+  if (confirm('Are you sure you want to delete this employee?')) {
+    try {
+      await api.delete(`/api/employees/${id}`)
+      await fetchEmployees()
+    } catch (error) {
+      console.error('Failed to delete employee:', error)
+      alert(error.response?.data?.message || 'Failed to delete employee')
+    }
+  }
+}
+
+const closeModal = () => {
+  showAddModal.value = false
+  showEditModal.value = false
+  editingId.value = null
+  form.firstName = ''
+  form.lastName = ''
+  form.email = ''
+  form.department = ''
+  form.position = ''
+  form.password = ''
+}
 </script>

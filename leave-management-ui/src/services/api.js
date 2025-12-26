@@ -1,48 +1,52 @@
 import axios from 'axios'
-import { useAuthStore } from '../stores/auth'
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: 'http://localhost:5000',
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config) => {
-    const authStore = useAuthStore()
-    if (authStore.accessToken) {
-      config.headers.Authorization = `Bearer ${authStore.accessToken}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
+// Add token to requests
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
-)
+  return config
+})
 
-// Response interceptor for token refresh
+// Handle 401 responses
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
+  response => response,
+  async error => {
     const originalRequest = error.config
-    const authStore = useAuthStore()
-
+    
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
-
-      try {
-        await authStore.refreshToken()
-        originalRequest.headers.Authorization = `Bearer ${authStore.accessToken}`
-        return api(originalRequest)
-      } catch (refreshError) {
-        authStore.logout()
-        window.location.href = '/login'
-        return Promise.reject(refreshError)
+      
+      const refreshToken = localStorage.getItem('refreshToken')
+      if (refreshToken) {
+        try {
+          const response = await axios.post('http://localhost:5000/api/auth/refresh', {
+            refreshToken
+          })
+          
+          const { accessToken, refreshToken: newRefreshToken } = response.data
+          localStorage.setItem('token', accessToken)
+          localStorage.setItem('refreshToken', newRefreshToken)
+          
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`
+          return api(originalRequest)
+        } catch (refreshError) {
+          localStorage.removeItem('token')
+          localStorage.removeItem('refreshToken')
+          localStorage.removeItem('user')
+          window.location.href = '/login'
+        }
       }
     }
-
+    
     return Promise.reject(error)
   }
 )
