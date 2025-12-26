@@ -68,6 +68,18 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// Add CORS for Vue frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowVueFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+    });
+});
+
 // Add OpenAPI/Swagger support with JWT
 builder.Services.AddOpenApi();
 
@@ -90,6 +102,9 @@ app.MapScalarApiReference(options =>
     options.WithTitle("Leave Management API");
     options.WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
 });
+
+// Enable CORS
+app.UseCors("AllowVueFrontend");
 
 app.UseHttpsRedirection();
 

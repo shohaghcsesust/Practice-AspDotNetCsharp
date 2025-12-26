@@ -14,7 +14,7 @@ public class LeaveDbContext : DbContext
     public DbSet<LeaveRequest> LeaveRequests { get; set; } = null!;
     public DbSet<LeaveBalance> LeaveBalances { get; set; } = null!;
     public DbSet<AuditLog> AuditLogs { get; set; } = null!;
-    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!
+    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
