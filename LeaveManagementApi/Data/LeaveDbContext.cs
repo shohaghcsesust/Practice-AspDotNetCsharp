@@ -15,6 +15,11 @@ public class LeaveDbContext : DbContext
     public DbSet<LeaveBalance> LeaveBalances { get; set; } = null!;
     public DbSet<AuditLog> AuditLogs { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+    public DbSet<PublicHoliday> PublicHolidays { get; set; } = null!;
+    public DbSet<LeaveAttachment> LeaveAttachments { get; set; } = null!;
+    public DbSet<ApprovalStep> ApprovalSteps { get; set; } = null!;
+    public DbSet<Notification> Notifications { get; set; } = null!;
+    public DbSet<LeaveCarryForward> LeaveCarryForwards { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -83,6 +88,65 @@ public class LeaveDbContext : DbContext
                   .WithMany(e => e.RefreshTokens)
                   .HasForeignKey(rt => rt.EmployeeId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PublicHoliday configuration
+        modelBuilder.Entity<PublicHoliday>(entity =>
+        {
+            entity.HasIndex(e => new { e.Date, e.Name }).IsUnique();
+        });
+
+        // LeaveAttachment configuration
+        modelBuilder.Entity<LeaveAttachment>(entity =>
+        {
+            entity.HasOne(la => la.LeaveRequest)
+                  .WithMany()
+                  .HasForeignKey(la => la.LeaveRequestId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(la => la.UploadedBy)
+                  .WithMany()
+                  .HasForeignKey(la => la.UploadedById)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ApprovalStep configuration
+        modelBuilder.Entity<ApprovalStep>(entity =>
+        {
+            entity.HasOne(a => a.LeaveRequest)
+                  .WithMany()
+                  .HasForeignKey(a => a.LeaveRequestId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.Approver)
+                  .WithMany()
+                  .HasForeignKey(a => a.ApproverId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Notification configuration
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasOne(n => n.User)
+                  .WithMany()
+                  .HasForeignKey(n => n.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LeaveCarryForward configuration
+        modelBuilder.Entity<LeaveCarryForward>(entity =>
+        {
+            entity.HasIndex(e => new { e.EmployeeId, e.LeaveTypeId, e.FromYear, e.ToYear }).IsUnique();
+
+            entity.HasOne(cf => cf.Employee)
+                  .WithMany()
+                  .HasForeignKey(cf => cf.EmployeeId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(cf => cf.LeaveType)
+                  .WithMany()
+                  .HasForeignKey(cf => cf.LeaveTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

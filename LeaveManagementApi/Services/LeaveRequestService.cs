@@ -380,6 +380,187 @@ public class LeaveRequestService : ILeaveRequestService
             : ApiResponse<bool>.FailureResponse("Failed to delete leave request.");
     }
 
+    public async Task<PaginatedResult<LeaveRequestDto>> SearchAsync(LeaveRequestSearchDto searchDto)
+    {
+        var allRequests = await _leaveRequestRepository.GetAllAsync();
+        var query = allRequests.AsQueryable();
+
+        // Apply filters
+        if (!string.IsNullOrEmpty(searchDto.EmployeeName))
+        {
+            var searchTerm = searchDto.EmployeeName.ToLower();
+            query = query.Where(lr => 
+                lr.Employee != null &&
+                ($"{lr.Employee.FirstName} {lr.Employee.LastName}").ToLower().Contains(searchTerm));
+        }
+
+        if (!string.IsNullOrEmpty(searchDto.Department))
+        {
+            query = query.Where(lr => lr.Employee != null && lr.Employee.Department == searchDto.Department);
+        }
+
+        if (searchDto.LeaveTypeId.HasValue)
+        {
+            query = query.Where(lr => lr.LeaveTypeId == searchDto.LeaveTypeId.Value);
+        }
+
+        if (!string.IsNullOrEmpty(searchDto.Status))
+        {
+            if (Enum.TryParse<LeaveStatus>(searchDto.Status, true, out var status))
+            {
+                query = query.Where(lr => lr.Status == status);
+            }
+        }
+
+        if (searchDto.StartDateFrom.HasValue)
+        {
+            query = query.Where(lr => lr.StartDate >= searchDto.StartDateFrom.Value);
+        }
+
+        if (searchDto.StartDateTo.HasValue)
+        {
+            query = query.Where(lr => lr.StartDate <= searchDto.StartDateTo.Value);
+        }
+
+        if (searchDto.EndDateFrom.HasValue)
+        {
+            query = query.Where(lr => lr.EndDate >= searchDto.EndDateFrom.Value);
+        }
+
+        if (searchDto.EndDateTo.HasValue)
+        {
+            query = query.Where(lr => lr.EndDate <= searchDto.EndDateTo.Value);
+        }
+
+        if (searchDto.MinDays.HasValue)
+        {
+            query = query.Where(lr => lr.TotalDays >= searchDto.MinDays.Value);
+        }
+
+        if (searchDto.MaxDays.HasValue)
+        {
+            query = query.Where(lr => lr.TotalDays <= searchDto.MaxDays.Value);
+        }
+
+        // Apply sorting
+        query = searchDto.SortBy?.ToLower() switch
+        {
+            "startdate" => searchDto.SortDescending ? query.OrderByDescending(lr => lr.StartDate) : query.OrderBy(lr => lr.StartDate),
+            "enddate" => searchDto.SortDescending ? query.OrderByDescending(lr => lr.EndDate) : query.OrderBy(lr => lr.EndDate),
+            "totaldays" => searchDto.SortDescending ? query.OrderByDescending(lr => lr.TotalDays) : query.OrderBy(lr => lr.TotalDays),
+            "status" => searchDto.SortDescending ? query.OrderByDescending(lr => lr.Status) : query.OrderBy(lr => lr.Status),
+            _ => query.OrderByDescending(lr => lr.CreatedAt)
+        };
+
+        var totalCount = query.Count();
+        var page = Math.Max(1, searchDto.Page);
+        var pageSize = Math.Max(1, Math.Min(100, searchDto.PageSize));
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(MapToDto)
+            .ToList();
+
+        return new PaginatedResult<LeaveRequestDto>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageNumber = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<BatchResultDto> BatchApproveAsync(BatchApproveDto dto)
+    {
+        var result = new BatchResultDto
+        {
+            TotalProcessed = dto.LeaveRequestIds.Count,
+            Results = new List<BatchResultItemDto>()
+        };
+
+        foreach (var requestId in dto.LeaveRequestIds)
+        {
+            try
+            {
+                var approveResult = await ApproveAsync(requestId, new ApproveRejectLeaveDto
+                {
+                    ApprovedById = dto.ApprovedById,
+                    Comments = dto.Comments
+                });
+
+                result.Results.Add(new BatchResultItemDto
+                {
+                    Id = requestId,
+                    Success = approveResult.Success,
+                    Message = approveResult.Message
+                });
+
+                if (approveResult.Success)
+                    result.SuccessCount++;
+                else
+                    result.FailureCount++;
+            }
+            catch (Exception ex)
+            {
+                result.Results.Add(new BatchResultItemDto
+                {
+                    Id = requestId,
+                    Success = false,
+                    Message = ex.Message
+                });
+                result.FailureCount++;
+            }
+        }
+
+        return result;
+    }
+
+    public async Task<BatchResultDto> BatchRejectAsync(BatchRejectDto dto)
+    {
+        var result = new BatchResultDto
+        {
+            TotalProcessed = dto.LeaveRequestIds.Count,
+            Results = new List<BatchResultItemDto>()
+        };
+
+        foreach (var requestId in dto.LeaveRequestIds)
+        {
+            try
+            {
+                var rejectResult = await RejectAsync(requestId, new ApproveRejectLeaveDto
+                {
+                    ApprovedById = dto.RejectedById,
+                    Comments = dto.Comments
+                });
+
+                result.Results.Add(new BatchResultItemDto
+                {
+                    Id = requestId,
+                    Success = rejectResult.Success,
+                    Message = rejectResult.Message
+                });
+
+                if (rejectResult.Success)
+                    result.SuccessCount++;
+                else
+                    result.FailureCount++;
+            }
+            catch (Exception ex)
+            {
+                result.Results.Add(new BatchResultItemDto
+                {
+                    Id = requestId,
+                    Success = false,
+                    Message = ex.Message
+                });
+                result.FailureCount++;
+            }
+        }
+
+        return result;
+    }
+
     private static LeaveRequestDto MapToDto(LeaveRequest leaveRequest)
     {
         return new LeaveRequestDto

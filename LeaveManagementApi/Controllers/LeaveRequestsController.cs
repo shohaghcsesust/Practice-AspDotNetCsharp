@@ -213,4 +213,40 @@ public class LeaveRequestsController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// Advanced search for leave requests (Admin/Manager only)
+    /// </summary>
+    [HttpPost("search")]
+    [Authorize(Roles = "Manager,Admin,HR")]
+    [ProducesResponseType(typeof(PaginatedResult<LeaveRequestDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PaginatedResult<LeaveRequestDto>>> Search([FromBody] LeaveRequestSearchDto searchDto)
+    {
+        var result = await _leaveRequestService.SearchAsync(searchDto);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Batch approve multiple leave requests (Manager/Admin only)
+    /// </summary>
+    [HttpPost("batch-approve")]
+    [Authorize(Roles = "Manager,Admin")]
+    [ProducesResponseType(typeof(BatchResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BatchResultDto>> BatchApprove([FromBody] BatchApproveDto dto)
+    {
+        var result = await _leaveRequestService.BatchApproveAsync(dto);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Batch reject multiple leave requests (Manager/Admin only)
+    /// </summary>
+    [HttpPost("batch-reject")]
+    [Authorize(Roles = "Manager,Admin")]
+    [ProducesResponseType(typeof(BatchResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BatchResultDto>> BatchReject([FromBody] BatchRejectDto dto)
+    {
+        var result = await _leaveRequestService.BatchRejectAsync(dto);
+        return Ok(result);
+    }
 }

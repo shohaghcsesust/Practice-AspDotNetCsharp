@@ -14,4 +14,9 @@ public interface ILeaveRequestService
     Task<ApiResponse<LeaveRequestDto>> RejectAsync(int id, ApproveRejectLeaveDto dto);
     Task<ApiResponse<LeaveRequestDto>> CancelAsync(int id);
     Task<ApiResponse<bool>> DeleteAsync(int id);
+    
+    // Advanced features
+    Task<PaginatedResult<LeaveRequestDto>> SearchAsync(LeaveRequestSearchDto searchDto);
+    Task<BatchResultDto> BatchApproveAsync(BatchApproveDto dto);
+    Task<BatchResultDto> BatchRejectAsync(BatchRejectDto dto);
 }
