@@ -9,12 +9,12 @@ public class LeaveDbContext : DbContext
     {
     }
 
-    public DbSet<Employee> Employees { get; set; }
-    public DbSet<LeaveType> LeaveTypes { get; set; }
-    public DbSet<LeaveRequest> LeaveRequests { get; set; }
-    public DbSet<LeaveBalance> LeaveBalances { get; set; }
-    public DbSet<AuditLog> AuditLogs { get; set; }
-    public DbSet<RefreshToken> RefreshTokens { get; set; }
+    public DbSet<Employee> Employees { get; set; } = null!;
+    public DbSet<LeaveType> LeaveTypes { get; set; } = null!;
+    public DbSet<LeaveRequest> LeaveRequests { get; set; } = null!;
+    public DbSet<LeaveBalance> LeaveBalances { get; set; } = null!;
+    public DbSet<AuditLog> AuditLogs { get; set; } = null!;
+    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
