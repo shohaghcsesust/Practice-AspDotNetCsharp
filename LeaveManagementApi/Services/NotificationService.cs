@@ -182,13 +182,17 @@ public class NotificationService : INotificationService
         switch (action.ToLower())
         {
             case "created":
-                // Notify manager
-                if (employee.ManagerId.HasValue)
+                // Notify all Admins and Managers (not just the direct manager)
+                var adminsAndManagers = await _context.Employees
+                    .Where(e => e.IsActive && (e.Role == Role.Admin || e.Role == Role.Manager) && e.Id != leaveRequest.EmployeeId)
+                    .ToListAsync();
+
+                foreach (var adminOrManager in adminsAndManagers)
                 {
                     await CreateNotificationAsync(
-                        employee.ManagerId.Value,
+                        adminOrManager.Id,
                         "New Leave Request",
-                        $"{employee.FirstName} {employee.LastName} has submitted a leave request.",
+                        $"{employee.FirstName} {employee.LastName} has submitted a leave request from {leaveRequest.StartDate:MMM dd} to {leaveRequest.EndDate:MMM dd}.",
                         "info",
                         $"/pending-approvals"
                     );
@@ -216,10 +220,15 @@ public class NotificationService : INotificationService
                 break;
 
             case "cancelled":
-                if (employee.ManagerId.HasValue)
+                // Notify all Admins and Managers
+                var adminsAndManagersForCancel = await _context.Employees
+                    .Where(e => e.IsActive && (e.Role == Role.Admin || e.Role == Role.Manager) && e.Id != leaveRequest.EmployeeId)
+                    .ToListAsync();
+
+                foreach (var adminOrManager in adminsAndManagersForCancel)
                 {
                     await CreateNotificationAsync(
-                        employee.ManagerId.Value,
+                        adminOrManager.Id,
                         "Leave Request Cancelled",
                         $"{employee.FirstName} {employee.LastName} has cancelled their leave request.",
                         "warning",

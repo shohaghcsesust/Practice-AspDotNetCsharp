@@ -12,6 +12,7 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ILeaveBalanceService _leaveBalanceService;
     private readonly IEmailService _emailService;
     private readonly IAuditService _auditService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<LeaveRequestService> _logger;
 
     public LeaveRequestService(
@@ -21,6 +22,7 @@ public class LeaveRequestService : ILeaveRequestService
         ILeaveBalanceService leaveBalanceService,
         IEmailService emailService,
         IAuditService auditService,
+        INotificationService notificationService,
         ILogger<LeaveRequestService> logger)
     {
         _leaveRequestRepository = leaveRequestRepository;
@@ -29,6 +31,7 @@ public class LeaveRequestService : ILeaveRequestService
         _leaveBalanceService = leaveBalanceService;
         _emailService = emailService;
         _auditService = auditService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -139,6 +142,9 @@ public class LeaveRequestService : ILeaveRequestService
                     leaveType.Name);
             }
         }
+
+        // Send real-time notification to admins/managers
+        await _notificationService.SendLeaveRequestNotificationAsync(result!, "created");
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
@@ -264,6 +270,9 @@ public class LeaveRequestService : ILeaveRequestService
                 true,
                 dto.Comments);
         }
+
+        // Send real-time notification to employee
+        await _notificationService.SendLeaveRequestNotificationAsync(result!, "approved");
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
@@ -317,6 +326,9 @@ public class LeaveRequestService : ILeaveRequestService
                 false,
                 dto.Comments);
         }
+
+        // Send real-time notification to employee
+        await _notificationService.SendLeaveRequestNotificationAsync(result!, "rejected");
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
@@ -360,6 +372,9 @@ public class LeaveRequestService : ILeaveRequestService
             await _auditService.LogAsync(result.EmployeeId, result.Employee.Email, AuditAction.Update, "LeaveRequest",
                 id.ToString(), new { Status = wasApproved ? "Approved" : "Pending" }, new { Status = "Cancelled" });
         }
+
+        // Send real-time notification to admins/managers
+        await _notificationService.SendLeaveRequestNotificationAsync(result!, "cancelled");
         
         return ApiResponse<LeaveRequestDto>.SuccessResponse(
             MapToDto(result!), 
