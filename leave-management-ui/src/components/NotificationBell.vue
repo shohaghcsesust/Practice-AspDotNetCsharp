@@ -122,19 +122,29 @@ const toggleDropdown = () => {
 const fetchNotifications = async () => {
   try {
     const response = await api.get('/api/notifications')
-    notifications.value = response.data.slice(0, 10)
+    console.log('Notifications fetched:', response.data)
+    notifications.value = Array.isArray(response.data) 
+      ? response.data.slice(0, 10) 
+      : (response.data.data || response.data.$values || []).slice(0, 10)
     updateUnreadCount()
   } catch (error) {
-    console.error('Failed to fetch notifications:', error)
+    console.error('Failed to fetch notifications:', error.response?.status, error.message)
+    // If API doesn't exist (404), don't show errors to user
+    if (error.response?.status === 404) {
+      console.warn('Notifications API not available on backend')
+    }
   }
 }
 
 const updateUnreadCount = async () => {
   try {
     const response = await api.get('/api/notifications/unread-count')
-    unreadCount.value = response.data.unreadCount
+    unreadCount.value = response.data.unreadCount || response.data.count || 0
+    console.log('Unread count:', unreadCount.value)
   } catch (error) {
-    console.error('Failed to get unread count:', error)
+    console.error('Failed to get unread count:', error.response?.status, error.message)
+    // Calculate unread from local notifications if API fails
+    unreadCount.value = notifications.value.filter(n => !n.isRead).length
   }
 }
 
@@ -196,16 +206,24 @@ const formatTime = (dateString) => {
 }
 
 const setupSignalR = async () => {
-  if (!authStore.token) return
+  if (!authStore.token) {
+    console.warn('No auth token, skipping SignalR connection')
+    return
+  }
+
+  const hubUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/hubs/notifications`
+  console.log('Connecting to SignalR hub:', hubUrl)
 
   connection = new signalR.HubConnectionBuilder()
-    .withUrl(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/hubs/notifications`, {
+    .withUrl(hubUrl, {
       accessTokenFactory: () => authStore.token
     })
     .withAutomaticReconnect()
+    .configureLogging(signalR.LogLevel.Information)
     .build()
 
   connection.on('ReceiveNotification', (notification) => {
+    console.log('SignalR notification received:', notification)
     notifications.value.unshift(notification)
     unreadCount.value++
     
@@ -219,6 +237,7 @@ const setupSignalR = async () => {
   })
 
   connection.on('NotificationRead', (notificationId) => {
+    console.log('Notification marked as read:', notificationId)
     const notification = notifications.value.find(n => n.id === notificationId)
     if (notification) {
       notification.isRead = true
@@ -226,15 +245,29 @@ const setupSignalR = async () => {
   })
 
   connection.on('AllNotificationsRead', () => {
+    console.log('All notifications marked as read')
     notifications.value.forEach(n => n.isRead = true)
     unreadCount.value = 0
   })
 
+  connection.onreconnecting((error) => {
+    console.warn('SignalR reconnecting...', error)
+  })
+
+  connection.onreconnected((connectionId) => {
+    console.log('SignalR reconnected:', connectionId)
+  })
+
+  connection.onclose((error) => {
+    console.warn('SignalR connection closed:', error)
+  })
+
   try {
     await connection.start()
-    console.log('SignalR connected')
+    console.log('SignalR connected successfully')
   } catch (error) {
-    console.error('SignalR connection failed:', error)
+    console.error('SignalR connection failed:', error.message)
+    // SignalR hub may not be configured on backend
   }
 }
 

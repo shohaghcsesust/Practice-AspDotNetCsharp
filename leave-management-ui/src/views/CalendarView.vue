@@ -39,54 +39,63 @@
             <span class="w-4 h-4 bg-red-500 rounded mr-2"></span>
             <span>Public Holiday</span>
           </div>
+          <div class="flex items-center">
+            <span class="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></span>
+            <span>Weekend</span>
+          </div>
         </div>
       </div>
       
       <!-- Calendar Grid -->
       <div class="bg-white shadow rounded-lg overflow-hidden">
-        <div class="grid grid-cols-7 bg-gray-50">
-          <div 
-            v-for="day in weekDays" 
-            :key="day"
-            class="py-3 text-center text-sm font-semibold text-gray-700 border-b"
-          >
-            {{ day }}
-          </div>
+        <!-- Loading indicator -->
+        <div v-if="loading" class="text-center py-8">
+          <span class="text-gray-500">Loading calendar data...</span>
         </div>
         
-        <div class="grid grid-cols-7">
-          <div 
-            v-for="(day, index) in calendarDays" 
-            :key="index"
-            class="min-h-24 p-2 border-b border-r"
-            :class="{ 
-              'bg-gray-50': !day.currentMonth,
-              'bg-blue-50': day.isToday
-            }"
-          >
-            <div class="text-sm font-medium" :class="{ 'text-gray-400': !day.currentMonth }">
-              {{ day.date }}
+        <template v-else>
+          <div class="grid grid-cols-7 bg-gray-50">
+            <div 
+              v-for="(day, idx) in weekDays" 
+              :key="day"
+              class="py-3 text-center text-sm font-semibold border-b"
+              :class="weekendDays.includes(idx) ? 'text-purple-700 bg-purple-50' : 'text-gray-700'"
+            >
+              {{ day }}
             </div>
-            
-            <div v-if="day.events.length > 0" class="mt-1 space-y-1">
-              <div 
-                v-for="event in day.events.slice(0, 3)" 
-                :key="event.id"
-                @click="showEventDetails(event)"
-                class="text-xs px-1 py-0.5 rounded truncate cursor-pointer"
-                :class="eventClass(event)"
-              >
-                {{ event.title }}
+          </div>
+          
+          <div class="grid grid-cols-7">
+            <div 
+              v-for="(day, index) in calendarDays" 
+              :key="index"
+              class="min-h-24 p-2 border-b border-r"
+              :class="getDayClass(day)"
+            >
+              <div class="text-sm font-medium" :class="getDayTextClass(day)">
+                {{ day.date }}
               </div>
-              <div 
-                v-if="day.events.length > 3"
-                class="text-xs text-gray-500"
-              >
-                +{{ day.events.length - 3 }} more
+              
+              <div v-if="day.events.length > 0" class="mt-1 space-y-1">
+                <div 
+                  v-for="event in day.events.slice(0, 3)" 
+                  :key="event.id"
+                  @click="showEventDetails(event)"
+                  class="text-xs px-1 py-0.5 rounded truncate cursor-pointer"
+                  :class="eventClass(event)"
+                >
+                  {{ event.title }}
+                </div>
+                <div 
+                  v-if="day.events.length > 3"
+                  class="text-xs text-gray-500"
+                >
+                  +{{ day.events.length - 3 }} more
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
     
@@ -137,6 +146,11 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '../services/api'
+import { useAuthStore } from '../stores/auth'
+import { useLeaveStore } from '../stores/leave'
+
+const authStore = useAuthStore()
+const leaveStore = useLeaveStore()
 
 const currentMonth = ref(new Date().getMonth())
 const currentYear = ref(new Date().getFullYear())
@@ -151,70 +165,36 @@ const monthNames = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ]
 
-const calendarDays = computed(() => {
-  const days = []
-  const firstDay = new Date(currentYear.value, currentMonth.value, 1)
-  const lastDay = new Date(currentYear.value, currentMonth.value + 1, 0)
-  const startPadding = firstDay.getDay()
-  const today = new Date()
-  
-  // Previous month padding
-  for (let i = startPadding - 1; i >= 0; i--) {
-    const date = new Date(currentYear.value, currentMonth.value, -i)
-    days.push({
-      date: date.getDate(),
-      fullDate: date,
-      currentMonth: false,
-      isToday: false,
-      events: getEventsForDate(date)
-    })
-  }
-  
-  // Current month days
-  for (let i = 1; i <= lastDay.getDate(); i++) {
-    const date = new Date(currentYear.value, currentMonth.value, i)
-    days.push({
-      date: i,
-      fullDate: date,
-      currentMonth: true,
-      isToday: date.toDateString() === today.toDateString(),
-      events: getEventsForDate(date)
-    })
-  }
-  
-  // Next month padding
-  const remaining = 42 - days.length
-  for (let i = 1; i <= remaining; i++) {
-    const date = new Date(currentYear.value, currentMonth.value + 1, i)
-    days.push({
-      date: i,
-      fullDate: date,
-      currentMonth: false,
-      isToday: false,
-      events: getEventsForDate(date)
-    })
-  }
-  
-  return days
-})
+// Weekend configuration: 0 = Sunday, 6 = Saturday
+const weekendDays = [0, 6]
 
-const getEventsForDate = (date) => {
-  const dateStr = date.toISOString().split('T')[0]
+const isWeekend = (date) => {
+  return weekendDays.includes(date.getDay())
+}
+
+const normalizeDate = (dateInput) => {
+  const d = new Date(dateInput)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+// Make getEventsForDate a function that takes explicit parameters for reactivity
+const getEventsForDate = (date, eventsList, holidaysList) => {
+  const normalizedDate = normalizeDate(date)
   const allEvents = []
   
   // Add leave events
-  events.value.forEach(event => {
-    const start = new Date(event.startDate)
-    const end = new Date(event.endDate)
-    if (date >= start && date <= end) {
+  eventsList.forEach(event => {
+    const start = normalizeDate(event.startDate)
+    const end = normalizeDate(event.endDate)
+    if (normalizedDate >= start && normalizedDate <= end) {
       allEvents.push(event)
     }
   })
   
   // Add holidays
-  holidays.value.forEach(holiday => {
-    const holidayDate = new Date(holiday.date)
-    if (holidayDate.toDateString() === date.toDateString()) {
+  holidaysList.forEach(holiday => {
+    const holidayDate = normalizeDate(holiday.date)
+    if (holidayDate.getTime() === normalizedDate.getTime()) {
       allEvents.push({
         id: `holiday-${holiday.id}`,
         title: holiday.name,
@@ -229,19 +209,104 @@ const getEventsForDate = (date) => {
   return allEvents
 }
 
+const calendarDays = computed(() => {
+  const days = []
+  const firstDay = new Date(currentYear.value, currentMonth.value, 1)
+  const lastDay = new Date(currentYear.value, currentMonth.value + 1, 0)
+  const startPadding = firstDay.getDay()
+  const today = new Date()
+  
+  // Access reactive refs directly to ensure reactivity
+  const currentEvents = events.value
+  const currentHolidays = holidays.value
+  
+  // Previous month padding
+  for (let i = startPadding - 1; i >= 0; i--) {
+    const date = new Date(currentYear.value, currentMonth.value, -i)
+    days.push({
+      date: date.getDate(),
+      fullDate: date,
+      currentMonth: false,
+      isToday: false,
+      isWeekend: isWeekend(date),
+      events: getEventsForDate(date, currentEvents, currentHolidays)
+    })
+  }
+  
+  // Current month days
+  for (let i = 1; i <= lastDay.getDate(); i++) {
+    const date = new Date(currentYear.value, currentMonth.value, i)
+    days.push({
+      date: i,
+      fullDate: date,
+      currentMonth: true,
+      isToday: date.toDateString() === today.toDateString(),
+      isWeekend: isWeekend(date),
+      events: getEventsForDate(date, currentEvents, currentHolidays)
+    })
+  }
+  
+  // Next month padding
+  const remaining = 42 - days.length
+  for (let i = 1; i <= remaining; i++) {
+    const date = new Date(currentYear.value, currentMonth.value + 1, i)
+    days.push({
+      date: i,
+      fullDate: date,
+      currentMonth: false,
+      isToday: false,
+      isWeekend: isWeekend(date),
+      events: getEventsForDate(date, currentEvents, currentHolidays)
+    })
+  }
+  
+  return days
+})
+
 const fetchCalendarData = async () => {
   loading.value = true
   try {
-    const startDate = new Date(currentYear.value, currentMonth.value, 1).toISOString()
-    const endDate = new Date(currentYear.value, currentMonth.value + 1, 0).toISOString()
+    // Fetch leave requests using the store - same approach as LeaveRequestsView
+    if (authStore.isManagerOrAdmin) {
+      await leaveStore.fetchAllLeaveRequests()
+    } else {
+      await leaveStore.fetchMyLeaveRequests()
+    }
     
-    const [eventsRes, holidaysRes] = await Promise.all([
-      api.get(`/api/calendar?startDate=${startDate}&endDate=${endDate}`),
-      api.get(`/api/publicholidays?year=${currentYear.value}`)
-    ])
+    // Get leave data from store and transform for calendar
+    const leaveData = leaveStore.leaveRequests || []
+    console.log('Leave data from store:', leaveData)
     
-    events.value = eventsRes.data
-    holidays.value = holidaysRes.data
+    // Filter to show only Approved and Pending leaves
+    const filteredLeaves = leaveData.filter(leave => 
+      leave.status === 'Approved' || leave.status === 'Pending'
+    )
+    console.log('Filtered leaves (Approved/Pending):', filteredLeaves)
+    
+    events.value = filteredLeaves.map(leave => ({
+      id: leave.id,
+      title: authStore.isManagerOrAdmin 
+        ? `${leave.employeeName || 'Employee'} - ${leave.leaveTypeName || 'Leave'}`
+        : `${leave.leaveTypeName || 'Leave'}`,
+      employeeName: leave.employeeName,
+      type: leave.leaveTypeName || 'Leave',
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      status: leave.status,
+      reason: leave.reason
+    }))
+    
+    console.log('Calendar events loaded:', events.value.length, 'events', events.value)
+    
+    // Fetch holidays
+    try {
+      const holidaysRes = await api.get(`/api/publicholidays?year=${currentYear.value}`)
+      holidays.value = Array.isArray(holidaysRes.data) ? holidaysRes.data : (holidaysRes.data.data || holidaysRes.data.$values || [])
+      console.log('Holidays loaded:', holidays.value.length, 'holidays')
+    } catch (holidayError) {
+      console.warn('Failed to fetch holidays:', holidayError)
+      holidays.value = []
+    }
   } catch (error) {
     console.error('Failed to fetch calendar data:', error)
   }
@@ -264,6 +329,29 @@ const nextMonth = () => {
   } else {
     currentMonth.value++
   }
+}
+
+const getDayClass = (day) => {
+  const classes = []
+  
+  if (day.isToday) {
+    classes.push('bg-blue-50')
+  } else if (day.isWeekend && day.currentMonth) {
+    classes.push('bg-purple-50')
+  } else if (day.isWeekend && !day.currentMonth) {
+    classes.push('bg-purple-50/50')
+  } else if (!day.currentMonth) {
+    classes.push('bg-gray-50')
+  }
+  
+  return classes.join(' ')
+}
+
+const getDayTextClass = (day) => {
+  if (!day.currentMonth) {
+    return day.isWeekend ? 'text-purple-300' : 'text-gray-400'
+  }
+  return day.isWeekend ? 'text-purple-700' : ''
 }
 
 const eventClass = (event) => {
