@@ -26,7 +26,12 @@ The **Leave Management API** is a RESTful web service built with ASP.NET Core th
 - Leave request submission, approval, and rejection
 - **Leave balance tracking** with automatic deduction/restoration
 - **Email notifications** for leave requests and approvals
+- **Real-time notifications** via SignalR WebSockets
 - **Audit logging** for all important actions
+- **Public holidays** management
+- **Leave carry-forward** functionality
+- **Multi-step approval workflows**
+- **Report generation** and exports
 
 ---
 
@@ -37,11 +42,14 @@ The project follows a **Clean/Layered Architecture** with clear separation of co
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      Presentation Layer                      │
-│                        (Controllers)                         │
+│                   (Controllers + SignalR Hub)                │
 │  ┌───────────┬───────────┬───────────┬───────────┬────────┐ │
 │  │ AuthCtrl  │Employees  │LeaveTypes │LeaveReqs  │AdminCtrl│ │
 │  │           │  Ctrl     │   Ctrl    │   Ctrl    │         │ │
 │  └─────┬─────┴─────┬─────┴─────┬─────┴─────┬─────┴────┬────┘ │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │  NotificationsCtrl  │  ReportsCtrl  │  NotificationHub  │ │
+│  └─────────────────────┴───────────────┴───────────────────┘ │
 └────────┼───────────┼───────────┼───────────┼──────────┼──────┘
          │           │           │           │          │
          ▼           ▼           ▼           ▼          ▼
@@ -49,8 +57,8 @@ The project follows a **Clean/Layered Architecture** with clear separation of co
 │                      Business Layer                          │
 │                        (Services)                            │
 │  ┌─────────┬─────────┬─────────┬─────────┬─────────┬──────┐ │
-│  │AuthSvc  │JwtSvc   │EmailSvc │AuditSvc │LeaveBal │Others│ │
-│  │         │         │         │         │  Svc    │      │ │
+│  │AuthSvc  │JwtSvc   │EmailSvc │AuditSvc │LeaveBal │Notify│ │
+│  │         │         │         │         │  Svc    │ Svc  │ │
 │  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┴──────┘ │
 └───────┼─────────┼─────────┼─────────┼─────────┼─────────────┘
         │         │         │         │         │
@@ -90,7 +98,17 @@ LeaveManagementApi/
 │   ├── EmployeesController.cs      # Employee CRUD endpoints
 │   ├── LeaveTypesController.cs     # Leave Type CRUD endpoints
 │   ├── LeaveRequestsController.cs  # Leave Request management endpoints
-│   └── LeaveBalanceController.cs   # Leave balance viewing endpoints
+│   ├── LeaveBalanceController.cs   # Leave balance viewing endpoints
+│   ├── NotificationsController.cs  # Real-time notifications endpoints
+│   ├── ReportsController.cs        # Reporting and analytics endpoints
+│   ├── PublicHolidaysController.cs # Public holidays management
+│   ├── CalendarController.cs       # Calendar integration endpoints
+│   ├── CarryForwardController.cs   # Leave carry-forward endpoints
+│   ├── ApprovalWorkflowController.cs # Multi-step approval workflow
+│   └── AttachmentsController.cs    # Leave request attachments
+│
+├── Hubs/                           # SignalR Real-time Communication
+│   └── NotificationHub.cs          # WebSocket hub for real-time notifications
 │
 ├── Services/                       # Business Logic Layer
 │   ├── IAuthService.cs             # Authentication service interface
@@ -108,7 +126,15 @@ LeaveManagementApi/
 │   ├── ILeaveTypeService.cs        # Leave Type service interface
 │   ├── LeaveTypeService.cs         # Leave Type service implementation
 │   ├── ILeaveRequestService.cs     # Leave Request service interface
-│   └── LeaveRequestService.cs      # Leave Request service implementation
+│   ├── LeaveRequestService.cs      # Leave Request service implementation
+│   ├── NotificationService.cs      # Real-time notification service (SignalR)
+│   ├── ReportService.cs            # Report generation service
+│   ├── ExportService.cs            # Data export service (CSV, Excel)
+│   ├── PublicHolidayService.cs     # Public holiday management
+│   ├── CalendarService.cs          # Calendar integration service
+│   ├── CarryForwardService.cs      # Leave carry-forward service
+│   ├── ApprovalWorkflowService.cs  # Multi-step approval workflow
+│   └── AttachmentService.cs        # File attachment handling
 │
 ├── Repositories/                   # Data Access Layer
 │   ├── IEmployeeRepository.cs      # Employee repository interface
@@ -125,7 +151,12 @@ LeaveManagementApi/
 │   ├── LeaveBalance.cs             # Leave Balance entity (tracks used/remaining days)
 │   ├── Role.cs                     # Role enum (Employee, Manager, Admin)
 │   ├── AuditLog.cs                 # Audit Log entity + AuditAction enum
-│   └── RefreshToken.cs             # Refresh Token entity for JWT
+│   ├── RefreshToken.cs             # Refresh Token entity for JWT
+│   ├── Notification.cs             # Notification entity for real-time alerts
+│   ├── PublicHoliday.cs            # Public Holiday entity
+│   ├── LeaveCarryForward.cs        # Leave carry-forward entity
+│   ├── ApprovalStep.cs             # Multi-step approval entity
+│   └── LeaveAttachment.cs          # File attachment entity
 │
 ├── DTOs/                           # Data Transfer Objects
 │   └── DTOs.cs                     # All DTOs (Auth, Employee, LeaveType, LeaveRequest, etc.)
@@ -138,7 +169,7 @@ LeaveManagementApi/
 │   ├── LeaveDbContext.cs           # EF Core DbContext
 │   └── DbInitializer.cs            # Seed data (users with roles, leave balances)
 │
-├── Program.cs                      # Application entry point, DI & JWT configuration
+├── Program.cs                      # Application entry point, DI, JWT & SignalR configuration
 ├── appsettings.json                # Application configuration (JWT, Email settings)
 ├── appsettings.Development.json    # Development-specific configuration
 └── LeaveManagementApi.csproj       # Project file with dependencies
@@ -447,6 +478,39 @@ public enum AuditAction
 | `GET` | `/api/leavebalance/employee/{employeeId}` | Get employee's balances | Yes |
 | `GET` | `/api/leavebalance/employee/{employeeId}/year/{year}` | Get balances by year | Yes |
 
+### Notifications API (Real-time)
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/notifications` | Get user's notifications | Yes |
+| `GET` | `/api/notifications/unread-count` | Get unread notification count | Yes |
+| `PATCH` | `/api/notifications/{id}/read` | Mark notification as read | Yes |
+| `PATCH` | `/api/notifications/read-all` | Mark all notifications as read | Yes |
+
+### SignalR Hub (WebSocket)
+
+| Hub URL | Event | Description |
+|---------|-------|-------------|
+| `/hubs/notifications` | `ReceiveNotification` | Receive real-time notification when leave is created/approved/rejected |
+| `/hubs/notifications` | `NotificationRead` | Notification marked as read |
+| `/hubs/notifications` | `AllNotificationsRead` | All notifications marked as read |
+
+**SignalR Connection Example (JavaScript):**
+```javascript
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("http://localhost:5000/hubs/notifications", {
+        accessTokenFactory: () => localStorage.getItem('token')
+    })
+    .withAutomaticReconnect()
+    .build();
+
+connection.on("ReceiveNotification", (notification) => {
+    console.log("New notification:", notification);
+});
+
+await connection.start();
+```
+
 ---
 
 ## Data Flow
@@ -648,6 +712,11 @@ curl -X POST http://localhost:5000/api/leaverequests/1/approve \
 - [x] Leave balance tracking ✅
 - [x] Email notifications ✅
 - [x] Audit logging ✅
+- [x] Real-time notifications via SignalR ✅
+- [x] Public holidays management ✅
+- [x] Leave carry-forward ✅
+- [x] Multi-step approval workflows ✅
+- [x] Report generation ✅
 - [ ] Pagination for large datasets
 - [ ] Unit & Integration tests
 - [ ] Rate limiting
@@ -657,5 +726,5 @@ curl -X POST http://localhost:5000/api/leaverequests/1/approve \
 
 ---
 
-*Document Version: 2.0*  
-*Last Updated: January 2025*
+*Document Version: 3.0*  
+*Last Updated: December 2025*
